@@ -1,0 +1,134 @@
+minimumLimaVersion: 2.0.0
+
+# Claudebox VM template - Debian 13 (Trixie) development VM
+# No host directory mounts; outbound internet access; services reachable
+# from host via port forwarding.
+
+images:
+- location: "https://cloud.debian.org/images/cloud/trixie/20251117-2299/debian-13-genericcloud-arm64-20251117-2299.qcow2"
+  arch: "aarch64"
+  digest: "sha512:5075d49a9a85f29d1ee78302785b0d5270fd22c16ca75b4b280f7f4c240fcd34fdfa22ab15a5457aa14fbdbf36d8c5562d1133709b58fc8efdec40e363eba085"
+- location: "https://cloud.debian.org/images/cloud/trixie/20251117-2299/debian-13-genericcloud-amd64-20251117-2299.qcow2"
+  arch: "x86_64"
+  digest: "sha512:e5563c7bb388eebf7df385e99ee36c83cd16ba8fad4bd07f4c3fd725a6f1cf1cb9f54c6673d4274a856974327a5007a69ff24d44f9b21f7f920e1938a19edf7e"
+- location: "https://cloud.debian.org/images/cloud/trixie/daily/latest/debian-13-genericcloud-arm64-daily.qcow2"
+  arch: "aarch64"
+- location: "https://cloud.debian.org/images/cloud/trixie/daily/latest/debian-13-genericcloud-amd64-daily.qcow2"
+  arch: "x86_64"
+
+cpus: 4
+memory: "6GiB"
+disk: "40GiB"
+
+# No host mounts - VM is fully isolated from host filesystem
+mounts: []
+
+# Port forwarding for common development services.
+# Services started in the VM on these ports are accessible as localhost:<port> on the Mac.
+# Add more rules as needed, or use `ssh -L` for ad-hoc forwarding.
+portForwards:
+- guestPort: 3000
+  hostPort: 3000
+- guestPort: 4000
+  hostPort: 4000
+- guestPort: 5000
+  hostPort: 5000
+- guestPort: 8000
+  hostPort: 8000
+- guestPort: 8080
+  hostPort: 8080
+- guestPort: 8888
+  hostPort: 8888
+- guestPort: 9000
+  hostPort: 9000
+
+provision:
+- mode: system
+  script: |
+    #!/bin/bash
+    set -euo pipefail
+    export DEBIAN_FRONTEND=noninteractive
+
+    echo "==> Updating package lists"
+    apt-get update -q
+
+    echo "==> Installing base packages"
+    apt-get install -y -q \
+      build-essential \
+      git \
+      emacs-nox \
+      vim \
+      curl \
+      wget \
+      tmux \
+      screen \
+      python3 \
+      python3-pip \
+      python3-venv \
+      python3-dev \
+      golang \
+      ca-certificates \
+      gnupg \
+      sudo \
+      less \
+      man-db \
+      unzip \
+      zip \
+      jq \
+      htop \
+      procps \
+      lsof \
+      netcat-openbsd \
+      dnsutils \
+      rsync \
+      file \
+      tree \
+      make \
+      cmake \
+      gcc \
+      g++ \
+      pkg-config \
+      libssl-dev \
+      libffi-dev
+
+    echo "==> Installing Node.js 22 from NodeSource"
+    curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+    apt-get install -y nodejs
+
+    echo "==> Installing Rust"
+    # Install rustup for the claude user (done in user provision step)
+
+    echo "==> Creating claude user"
+    if ! id -u claude &>/dev/null; then
+      useradd -m -s /bin/bash -G sudo claude
+    fi
+
+    echo "==> Configuring sudoers"
+    cat > /etc/sudoers.d/claudebox << 'SUDOERS'
+    Defaults !lecture
+    Defaults !requiretty
+    Defaults timestamp_timeout=300
+    %sudo ALL=(ALL) NOPASSWD: ALL
+    SUDOERS
+    chmod 440 /etc/sudoers.d/claudebox
+
+    echo "==> Setting up claude user SSH access"
+    # Lima creates a user with the same name as the host user; find their authorized_keys
+    # (home dir may be /home/<user>.linux — so we search rather than guess the path)
+    LIMA_KEYS=$(find /home -maxdepth 3 -name authorized_keys 2>/dev/null | head -1)
+    mkdir -p /home/claude/.ssh
+    if [ -n "$LIMA_KEYS" ]; then
+      cp "$LIMA_KEYS" /home/claude/.ssh/authorized_keys
+    fi
+    chown -R claude:claude /home/claude/.ssh
+    chmod 700 /home/claude/.ssh
+    [ -f /home/claude/.ssh/authorized_keys ] && chmod 600 /home/claude/.ssh/authorized_keys
+
+    echo "==> Creating ~/work and ~/bin directories"
+    mkdir -p /home/claude/work /home/claude/bin
+    chown -R claude:claude /home/claude
+
+    echo "==> Installing Claude Code globally"
+    npm install -g @anthropic-ai/claude-code
+
+    echo "==> Provision complete"

@@ -1,0 +1,434 @@
+#!/usr/bin/env bash
+# claudebox - manage isolated Debian development VMs via Lima
+# Usage: claudebox <command> [name]
+
+set -euo pipefail
+
+CLAUDEBOX_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+TEMPLATE="$CLAUDEBOX_DIR/template.yaml"
+HOME_SEED="$CLAUDEBOX_DIR/home-seed"
+CLAUDE_SESSION="claude"
+
+# ── helpers ─────────────────────────────────────────────────────────────────
+
+die() { echo "claudebox: error: $*" >&2; exit 1; }
+
+require_name() {
+    [ -n "${1:-}" ] || die "VM name required"
+    echo "$1"
+}
+
+require_running() {
+    local name="$1"
+    local status
+    status=$(limactl list --format '{{.Name}} {{.Status}}' 2>/dev/null \
+        | awk -v n="$name" '$1==n {print $2}')
+    [ "$status" = "Running" ] || die "VM '$name' is not running (status: ${status:-not found})"
+}
+
+# Return the SSH config file path for a Lima VM
+lima_ssh_config() {
+    local name="$1"
+    local cfg="$HOME/.lima/$name/ssh.config"
+    [ -f "$cfg" ] || die "VM '$name' not found (no SSH config at $cfg)"
+    echo "$cfg"
+}
+
+# Return SSH options for connecting as the claude user to a VM.
+# Uses Lima's SSH config for key/port/host, overrides User and disables
+# ControlMaster (which is keyed to the lima user, not claude).
+claude_ssh_opts() {
+    local name="$1"
+    local cfg port key
+    cfg=$(lima_ssh_config "$name")
+    port=$(awk '/^  Port / {print $2}' "$cfg")
+    key=$(awk '/^  IdentityFile / {gsub(/"/, "", $2); print $2}' "$cfg")
+    echo "-p ${port} -i ${key} -o StrictHostKeyChecking=no -o UserKnownHostsFile=\
+/dev/null -o LogLevel=ERROR -o ControlMaster=no -o User=claude"
+}
+
+# SSH as the claude user into a VM
+claude_ssh() {
+    local name="$1"
+    shift
+    local opts
+    opts=$(claude_ssh_opts "$name")
+    # shellcheck disable=SC2086
+    ssh $opts 127.0.0.1 "$@"
+}
+
+# Wait for cloud-init to finish (called after limactl start)
+wait_provision() {
+    local name="$1"
+    echo "==> Waiting for provisioning to complete..."
+    # limactl start already waits for Lima guest agent, but provision scripts
+    # run after. Poll until the sentinel file exists.
+    local deadline=$((SECONDS + 600))
+    while [ $SECONDS -lt $deadline ]; do
+        if limactl shell "$name" -- \
+            bash -c 'test -f /var/lib/cloud/instance/boot-finished' 2>/dev/null; then
+            echo "==> Provisioning complete."
+            return 0
+        fi
+        printf '.'
+        sleep 5
+    done
+    echo ""
+    die "Provisioning timed out after 10 minutes"
+}
+
+# Populate the claude user's home directory from home-seed
+populate_home() {
+    local name="$1"
+    echo "==> Populating claude home directory from home-seed..."
+
+    # Build a tar of the home-seed directory and pipe it into the VM.
+    # COPYFILE_DISABLE suppresses macOS extended-attribute entries (.__MACOSX,
+    # com.apple.provenance, etc.) that produce warnings from GNU tar in the VM.
+    COPYFILE_DISABLE=1 tar --no-xattrs -C "$HOME_SEED" -czf - . \
+        | limactl shell "$name" -- \
+            sudo bash -c 'tar -xzf - -C /home/claude/ && chown -R claude:claude /home/claude/'
+
+    # Create work directory if not in seed
+    limactl shell "$name" -- \
+        sudo -u claude bash -c 'mkdir -p ~/work ~/bin ~/go'
+
+    echo "==> Home directory populated."
+}
+
+# Forward Claude Code credentials from the host macOS Keychain into the VM.
+# On macOS, Claude Code stores OAuth tokens in the Keychain under
+# "Claude Code-credentials". On Linux, it reads from ~/.claude/.credentials.json.
+#
+# Also copies ~/.claude/settings.json so Claude Code skips the new-user setup
+# flow (terminal color preference, etc.) on first launch.
+#
+# Token expiry note: the access token may have expired; Claude Code should use
+# the refresh token automatically. If it still prompts for login, run
+# 'claudebox creds <name>' after re-authenticating on the Mac.
+sync_credentials() {
+    local name="$1"
+    local creds
+    creds=$(security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null) || {
+        echo "    (no Claude Code credentials found in Keychain — run 'claude login' on the Mac first)"
+        return 0
+    }
+    echo "==> Forwarding Claude Code credentials to VM '$name'..."
+
+    # Write credentials file
+    printf '%s\n' "$creds" \
+        | claude_ssh "$name" \
+            "mkdir -p ~/.claude && cat > ~/.claude/.credentials.json && chmod 600 ~/.claude/.credentials.json"
+
+    # Write VM-specific settings.json.
+    # defaultMode=bypassPermissions sets bypass mode via config (avoids the
+    # interactive "take responsibility" prompt that the CLI flag triggers).
+    # permissions.allow pre-approves all tools so Claude never prompts for
+    # individual tool uses — appropriate since this is an isolated sandbox VM.
+    claude_ssh "$name" "cat > ~/.claude/settings.json && chmod 644 ~/.claude/settings.json" << 'SETTINGS'
+{
+  "defaultMode": "bypassPermissions",
+  "permissions": {
+    "allow": [
+      "Bash(*)",
+      "Read(*)",
+      "Edit(*)",
+      "Write(*)",
+      "MultiEdit(*)",
+      "NotebookEdit(*)",
+      "WebFetch(*)",
+      "WebSearch(*)",
+      "Skill(*)",
+      "Agent(*)"
+    ]
+  }
+}
+SETTINGS
+
+    # Copy ~/.claude.json (global state: theme, numStartups, tips history, etc.)
+    # This is what Claude Code checks on startup to determine if initialization
+    # has been completed. Without it, the color-picker wizard always appears.
+    # We also inject a pre-accepted project entry for ~/work so that Claude Code
+    # skips the workspace trust dialog and the bypass-permissions acknowledgment.
+    local global_state="$HOME/.claude.json"
+    if [ -f "$global_state" ]; then
+        python3 -c "
+import json, sys
+with open('$global_state') as f:
+    d = json.load(f)
+d.setdefault('projects', {})['/home/claude/work'] = {
+    'allowedTools': [],
+    'mcpContextUris': [],
+    'mcpServers': {},
+    'enabledMcpjsonServers': [],
+    'disabledMcpjsonServers': [],
+    'hasTrustDialogAccepted': True,
+    'hasCompletedProjectOnboarding': True,
+    'projectOnboardingSeenCount': 1,
+    'hasClaudeMdExternalIncludesApproved': False,
+    'hasClaudeMdExternalIncludesWarningShown': False,
+}
+print(json.dumps(d))
+" | claude_ssh "$name" "cat > ~/.claude.json && chmod 600 ~/.claude.json"
+    fi
+
+    echo "==> Credentials forwarded."
+}
+
+# Run Claude Code once in headless -p mode to complete first-run initialization
+# (token refresh, plugin marketplace sync, sessions dir creation) without showing
+# the interactive setup wizard.
+silent_init() {
+    local name="$1"
+    echo "==> Running Claude Code first-run initialization (headless)..."
+    # -p/--print mode skips the interactive wizard entirely; --dangerously-skip-permissions
+    # avoids any permission prompts; output is suppressed.
+    # Use a login shell so .bash_profile/.bashrc are sourced and claude is on PATH.
+    if claude_ssh "$name" \
+        "bash -l -c 'cd ~/work && claude -p hello'"; then
+        echo "==> Claude Code initialized."
+    else
+        echo "    Warning: headless initialization returned an error (exit $?)."
+        echo "    The setup wizard may appear on first interactive launch."
+        echo "    If prompted to log in, re-run: claudebox creds $name"
+    fi
+}
+
+# ── commands ────────────────────────────────────────────────────────────────
+
+cmd_create() {
+    local name
+    name=$(require_name "${1:-}")
+
+    # Check if already exists
+    if limactl list --format '{{.Name}}' 2>/dev/null | grep -qx "$name"; then
+        die "VM '$name' already exists. Use 'claudebox destroy $name' first, or 'claudebox claude $name' to connect."
+    fi
+
+    echo "==> Creating VM '$name' (this will take several minutes on first run)"
+    echo "    Template: $TEMPLATE"
+    echo ""
+
+    limactl create --tty=false --name="$name" "$TEMPLATE"
+    limactl start "$name"
+
+    wait_provision "$name"
+    populate_home "$name"
+    sync_credentials "$name"
+    silent_init "$name"
+
+    echo ""
+    echo "==> VM '$name' is ready."
+    echo "    Connecting to Claude Code session..."
+    echo ""
+
+    cmd_claude "$name"
+}
+
+cmd_claude() {
+    local name
+    name=$(require_name "${1:-}")
+    require_running "$name"
+
+    echo "==> Attaching to Claude Code session in VM '$name'..."
+    echo "    (tmux session '$CLAUDE_SESSION' — detach with Ctrl-b d)"
+    echo ""
+
+    # Attach to existing tmux session or create new one running Claude Code.
+    # If the session exists but Claude Code has exited (leaving a bare shell),
+    # send it the command to restart Claude rather than just attaching.
+    claude_ssh "$name" -t "bash -l -c '
+        if tmux has-session -t \"$CLAUDE_SESSION\" 2>/dev/null; then
+            # Session exists — check if claude is still running in it
+            if ! tmux list-panes -t \"$CLAUDE_SESSION\" -F \"#{pane_current_command}\" \
+                | grep -qE \"^claude\$\"; then
+                # Claude exited; restart it in the existing session window
+                tmux send-keys -t \"$CLAUDE_SESSION\" \
+                    \"cd ~/work && claude\" Enter
+            fi
+            tmux attach-session -t \"$CLAUDE_SESSION\"
+        else
+            tmux new-session -s \"$CLAUDE_SESSION\" -c ~/work -- claude
+        fi
+    '"
+}
+
+cmd_connect() {
+    local name
+    name=$(require_name "${1:-}")
+    require_running "$name"
+
+    echo "==> Connecting to bash shell in VM '$name' (user: claude)..."
+    claude_ssh "$name" -t "bash -l"
+}
+
+cmd_root() {
+    local name
+    name=$(require_name "${1:-}")
+    require_running "$name"
+
+    echo "==> Connecting as root in VM '$name'..."
+    limactl shell "$name" -- sudo -i bash
+}
+
+cmd_creds() {
+    local name
+    name=$(require_name "${1:-}")
+    require_running "$name"
+    sync_credentials "$name"
+}
+
+cmd_suspend() {
+    local name
+    name=$(require_name "${1:-}")
+    echo "==> Suspending VM '$name'..."
+    limactl stop "$name"
+    echo "==> VM '$name' suspended. Resume with: claudebox resume $name"
+}
+
+cmd_resume() {
+    local name
+    name=$(require_name "${1:-}")
+    echo "==> Resuming VM '$name'..."
+    limactl start "$name"
+    echo "==> VM '$name' is running."
+}
+
+cmd_destroy() {
+    local name
+    name=$(require_name "${1:-}")
+
+    echo "WARNING: This will permanently delete VM '$name' and all its data."
+    printf "Type the VM name to confirm: "
+    read -r confirm
+    [ "$confirm" = "$name" ] || die "Aborted."
+
+    limactl stop "$name" 2>/dev/null || true
+    limactl delete "$name"
+    echo "==> VM '$name' deleted."
+}
+
+cmd_list() {
+    limactl list
+}
+
+cmd_ip() {
+    local name
+    name=$(require_name "${1:-}")
+    require_running "$name"
+
+    local cfg port vm_ip
+    cfg=$(lima_ssh_config "$name")
+    port=$(awk '/^  Port / {print $2}' "$cfg")
+    vm_ip=$(limactl shell "$name" -- hostname -I 2>/dev/null | awk '{print $1}')
+
+    echo "VM internal IP : $vm_ip (not directly reachable from host)"
+    echo "SSH             : 127.0.0.1:$port"
+    echo "Services        : 127.0.0.1:<port> (see portForwards in template.yaml)"
+    echo ""
+    echo "For direct IP access, install socket_vmnet:"
+    echo "  brew install socket_vmnet"
+    echo "  sudo brew services start socket_vmnet"
+    echo "  (then add 'networks: [{lima: shared}]' to template.yaml)"
+}
+
+cmd_ssh_config() {
+    local name
+    name=$(require_name "${1:-}")
+    local cfg port key
+    cfg=$(lima_ssh_config "$name")
+    port=$(awk '/^  Port / {print $2}' "$cfg")
+    key=$(awk '/^  IdentityFile / {gsub(/"/, "", $2); print $2}' "$cfg")
+
+    cat <<EOF
+Host claudebox-$name
+    HostName 127.0.0.1
+    Port $port
+    User claude
+    IdentityFile $key
+    StrictHostKeyChecking no
+    UserKnownHostsFile /dev/null
+    LogLevel ERROR
+EOF
+}
+
+cmd_status() {
+    local name="${1:-}"
+    if [ -n "$name" ]; then
+        limactl list --format '{{.Name}} {{.Status}} {{.CPUs}} {{.Memory}} {{.Disk}}' \
+            | awk -v n="$name" 'NR==1 || $1==n'
+    else
+        cmd_list
+    fi
+}
+
+cmd_port_forward() {
+    # Ad-hoc port forwarding: claudebox forward <name> <guest-port> [host-port]
+    local name="${1:-}"
+    local guest_port="${2:-}"
+    local host_port="${3:-$guest_port}"
+    name=$(require_name "$name")
+    [ -n "$guest_port" ] || die "Usage: claudebox forward <name> <guest-port> [host-port]"
+    require_running "$name"
+
+    local opts
+    opts=$(claude_ssh_opts "$name")
+    echo "==> Forwarding host:$host_port -> VM:$guest_port (Ctrl-C to stop)"
+    # shellcheck disable=SC2086
+    ssh $opts -N -L "${host_port}:127.0.0.1:${guest_port}" 127.0.0.1
+}
+
+# ── dispatch ─────────────────────────────────────────────────────────────────
+
+usage() {
+    cat <<'EOF'
+claudebox - manage isolated Debian development VMs
+
+Usage:
+  claudebox create <name>          Create VM, provision, drop into Claude Code
+  claudebox claude <name>          Attach to (or start) Claude Code tmux session
+  claudebox connect <name>         Interactive bash shell (as user claude)
+  claudebox root <name>            Interactive shell as root
+  claudebox suspend <name>         Stop the VM (preserves disk)
+  claudebox resume <name>          Start a suspended VM
+  claudebox destroy <name>         Permanently delete VM and all data
+  claudebox list                   List all VMs
+  claudebox status [name]          Show VM status
+  claudebox ip <name>              Show VM networking info
+  claudebox ssh-config <name>      Print SSH config block for ~/.ssh/config
+  claudebox creds <name>            Re-sync Claude Code credentials from Mac Keychain
+  claudebox forward <name> <port> [host-port]
+                                   Ad-hoc port forward from host to VM
+
+Notes:
+  - Claude Code runs in bypassPermissions mode (set via settings.json defaultMode).
+  - The tmux session is named 'claude'. Detach with Ctrl-b d; reattach with
+    'claudebox claude <name>'.
+  - Services running on common ports (3000, 4000, 5000, 8000, 8080, 8888,
+    9000) are automatically forwarded to localhost on the Mac.
+  - Config: <claudebox-dir>/template.yaml (VM resources, port forwards)
+  - Home seed: <claudebox-dir>/home-seed/ (dotfiles copied on create)
+EOF
+}
+
+CMD="${1:-}"
+shift || true
+
+case "$CMD" in
+    create)       cmd_create "$@" ;;
+    creds)        cmd_creds "$@" ;;
+    claude)       cmd_claude "$@" ;;
+    connect)      cmd_connect "$@" ;;
+    root)         cmd_root "$@" ;;
+    suspend)      cmd_suspend "$@" ;;
+    resume)       cmd_resume "$@" ;;
+    destroy)      cmd_destroy "$@" ;;
+    list)         cmd_list ;;
+    status)       cmd_status "$@" ;;
+    ip)           cmd_ip "$@" ;;
+    ssh-config)   cmd_ssh_config "$@" ;;
+    forward)      cmd_port_forward "$@" ;;
+    help|--help|-h) usage ;;
+    "")           usage ;;
+    *)            die "Unknown command: $CMD. Run 'claudebox help' for usage." ;;
+esac

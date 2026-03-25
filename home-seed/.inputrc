@@ -1,0 +1,14 @@
+# Readline configuration
+"\e[A": history-search-backward
+"\e[B": history-search-forward
+"\e[C": forward-char
+"\e[D": backward-char
+
+# Make Tab autocomplete case-insensitive
+set completion-ignore-case on
+
+# Show all completions at once
+set show-all-if-ambiguous on
+
+# Immediately add a trailing slash when autocompleting symlinks to directories
+set mark-symlinked-directories on

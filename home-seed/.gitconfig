@@ -1,0 +1,20 @@
+[core]
+    editor = emacs
+    pager = less -R
+    autocrlf = false
+[color]
+    ui = auto
+[push]
+    default = simple
+    autoSetupRemote = true
+[pull]
+    rebase = false
+[init]
+    defaultBranch = main
+[alias]
+    st = status
+    co = checkout
+    br = branch
+    lg = log --oneline --graph --decorate -20
+    unstage = reset HEAD --
+    last = log -1 HEAD
