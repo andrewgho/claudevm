@@ -1,4 +1,4 @@
-# claudebox
+# claudevm
 
 Isolated Debian development VMs for running Claude Code without permission
 restrictions. Each VM is fully independent — Claude can do whatever it wants
@@ -7,18 +7,18 @@ inside the VM, and you can tear it down and recreate it at any time.
 ## Quick start
 
 ```bash
-# Add claudebox to your PATH (one-time setup)
-echo 'export PATH="$HOME/work/claudebox/bin:$PATH"' >> ~/.zshrc
+# Add claudevm to your PATH (one-time setup)
+echo 'export PATH="$HOME/work/claudevm/bin:$PATH"' >> ~/.zshrc
 source ~/.zshrc
 
 # Create a new VM and drop into a Claude Code session
-claudebox create myproject
+claudevm create myproject
 
 # In another terminal: open a bash shell in the same VM
-claudebox connect myproject
+claudevm connect myproject
 
 # Reconnect to an existing Claude Code session (e.g., after closing the window)
-claudebox claude myproject
+claudevm claude myproject
 ```
 
 ## Installation
@@ -35,14 +35,14 @@ Lima is already installed if you use Colima (`brew info lima` to verify).
 
 ```bash
 # Clone or place this repo
-cd ~/work/claudebox
+cd ~/work/claudevm
 
 # Add to PATH
-echo 'export PATH="$HOME/work/claudebox/bin:$PATH"' >> ~/.zshrc
+echo 'export PATH="$HOME/work/claudevm/bin:$PATH"' >> ~/.zshrc
 source ~/.zshrc
 
 # Verify
-claudebox help
+claudevm help
 ```
 
 ---
@@ -51,17 +51,17 @@ claudebox help
 
 | Command | Description |
 |---|---|
-| `claudebox create <name>` | Create VM, provision it, populate home dir, drop into Claude Code |
-| `claudebox claude <name>` | Attach to existing Claude Code session, or start a new one |
-| `claudebox connect <name>` | Interactive bash shell as user `claude` |
-| `claudebox root <name>` | Interactive shell as root |
-| `claudebox suspend <name>` | Stop VM (disk preserved) |
-| `claudebox resume <name>` | Start a suspended VM |
-| `claudebox destroy <name>` | Permanently delete VM and all its data |
-| `claudebox list` | List all VMs with status |
-| `claudebox ip <name>` | Show VM networking info |
-| `claudebox ssh-config <name>` | Print SSH config block for `~/.ssh/config` |
-| `claudebox forward <name> <port> [host-port]` | Ad-hoc port forward |
+| `claudevm create <name>` | Create VM, provision it, populate home dir, drop into Claude Code |
+| `claudevm claude <name>` | Attach to existing Claude Code session, or start a new one |
+| `claudevm connect <name>` | Interactive bash shell as user `claude` |
+| `claudevm root <name>` | Interactive shell as root |
+| `claudevm suspend <name>` | Stop VM (disk preserved) |
+| `claudevm resume <name>` | Start a suspended VM |
+| `claudevm destroy <name>` | Permanently delete VM and all its data |
+| `claudevm list` | List all VMs with status |
+| `claudevm ip <name>` | Show VM networking info |
+| `claudevm ssh-config <name>` | Print SSH config block for `~/.ssh/config` |
+| `claudevm forward <name> <port> [host-port]` | Ad-hoc port forward |
 
 ---
 
@@ -90,12 +90,12 @@ Rust is **not** pre-installed (large download; install with `rustup` if needed).
 
 ## Session model
 
-`claudebox create` and `claudebox claude` both connect you to a **tmux session**
+`claudevm create` and `claudevm claude` both connect you to a **tmux session**
 named `claude` running inside the VM. This means:
 
 - Closing the terminal window does **not** stop Claude Code.
-- `claudebox claude <name>` always reattaches to the running session.
-- If Claude Code has exited, `claudebox claude` starts a fresh session.
+- `claudevm claude <name>` always reattaches to the running session.
+- If Claude Code has exited, `claudevm claude` starts a fresh session.
 - Detach from the session at any time with **Ctrl-b d**.
 
 Inside the tmux session, Claude Code runs as:
@@ -135,8 +135,8 @@ So if Claude starts a web server on port 8080 inside the VM, you can open
 
 ```bash
 # Forward a specific port not in the pre-configured list
-claudebox forward myproject 5432        # forwards postgres to localhost:5432
-claudebox forward myproject 6379 16379  # forward guest:6379 -> host:16379
+claudevm forward myproject 5432        # forwards postgres to localhost:5432
+claudevm forward myproject 6379 16379  # forward guest:6379 -> host:16379
 ```
 
 ### Direct VM IP (optional, requires socket_vmnet)
@@ -156,13 +156,13 @@ networks:
 ```
 
 VMs will get IPs in the `192.168.105.x` range, reachable from your Mac.
-Run `claudebox ip <name>` to see the IP.
+Run `claudevm ip <name>` to see the IP.
 
 ---
 
 ## Home directory customization
 
-On `claudebox create`, the contents of `home-seed/` are copied into the VM's
+On `claudevm create`, the contents of `home-seed/` are copied into the VM's
 `/home/claude/` directory. To customize what every new VM gets:
 
 ```
@@ -176,18 +176,18 @@ home-seed/
 
 You can add any dotfiles here. The seed is applied once at VM creation.
 
-To add dotfiles to existing VMs, use `claudebox connect` and copy them manually,
-or use `claudebox forward` + `rsync`.
+To add dotfiles to existing VMs, use `claudevm connect` and copy them manually,
+or use `claudevm forward` + `rsync`.
 
 ---
 
 ## VM lifecycle
 
 ```
-claudebox create myproject   # → Running (Claude Code session)
-claudebox suspend myproject  # → Stopped (disk preserved)
-claudebox resume myproject   # → Running again
-claudebox destroy myproject  # → Gone (requires typing name to confirm)
+claudevm create myproject   # → Running (Claude Code session)
+claudevm suspend myproject  # → Stopped (disk preserved)
+claudevm resume myproject   # → Running again
+claudevm destroy myproject  # → Gone (requires typing name to confirm)
 ```
 
 Suspended VMs don't use CPU or RAM, but their disk image remains on your Mac
@@ -199,13 +199,13 @@ Suspended VMs don't use CPU or RAM, but their disk image remains on your Mac
 
 ### Running multiple VMs simultaneously
 
-Each `claudebox create <name>` creates a fully independent VM. You can run
+Each `claudevm create <name>` creates a fully independent VM. You can run
 several at once:
 
 ```bash
-claudebox create project-a
-claudebox create project-b
-claudebox list
+claudevm create project-a
+claudevm create project-b
+claudevm list
 ```
 
 Each gets its own SSH port, disk, and tmux session.
@@ -217,24 +217,24 @@ Each gets its own SSH port, disk, and tmux session.
 limactl copy myfile.txt myproject:/home/claude/work/
 
 # Or pipe through ssh
-cat myfile.txt | claudebox connect myproject  # paste via stdin
+cat myfile.txt | claudevm connect myproject  # paste via stdin
 ```
 
 ### Using VS Code Remote SSH
 
 ```bash
 # Add SSH config for a VM
-claudebox ssh-config myproject >> ~/.ssh/config
+claudevm ssh-config myproject >> ~/.ssh/config
 
 # Then connect in VS Code:
-# Remote-SSH: Connect to Host → claudebox-myproject
+# Remote-SSH: Connect to Host → claudevm-myproject
 ```
 
 ### Giving Claude a GitHub token
 
 ```bash
 # Connect to the VM and set the token
-claudebox connect myproject
+claudevm connect myproject
 # Inside VM:
 echo 'export GITHUB_TOKEN=ghp_...' >> ~/.bashrc.local
 source ~/.bashrc.local
@@ -245,8 +245,8 @@ Or set environment variables in `home-seed/.bashrc.local` before creating the VM
 ### Recreating a VM from scratch
 
 ```bash
-claudebox destroy myproject   # type name to confirm
-claudebox create myproject    # fresh VM, same name
+claudevm destroy myproject   # type name to confirm
+claudevm create myproject    # fresh VM, same name
 ```
 
 Since the home-seed is re-applied, your dotfiles and PATH are always consistent.
@@ -274,12 +274,12 @@ portForwards:
   hostPort: 5432
 ```
 
-This affects newly created VMs. For existing VMs, use `claudebox forward`.
+This affects newly created VMs. For existing VMs, use `claudevm forward`.
 
 ### Checking what's running in the VM
 
 ```bash
-claudebox connect myproject
+claudevm connect myproject
 # Inside VM:
 ps aux
 tmux ls        # list tmux sessions
@@ -289,7 +289,7 @@ tmux attach    # reattach to claude session
 ### Installing Rust in the VM
 
 ```bash
-claudebox connect myproject
+claudevm connect myproject
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 source ~/.cargo/env
 ```
@@ -297,7 +297,7 @@ source ~/.cargo/env
 ### Installing additional languages
 
 ```bash
-claudebox connect myproject
+claudevm connect myproject
 # Java
 sudo apt-get install -y openjdk-21-jdk
 # Ruby
@@ -310,7 +310,7 @@ sudo apt-get install -y php php-cli
 
 ## Troubleshooting
 
-### `claudebox create` hangs at provisioning
+### `claudevm create` hangs at provisioning
 
 Provisioning downloads packages (Node.js, etc.) and may take 5–10 minutes on
 first run. The Debian base image is ~300MB and is cached after first download.
@@ -319,8 +319,8 @@ Check progress with `limactl shell <name> -- journalctl -f`.
 
 ### SSH connection refused
 
-If `claudebox connect` fails with "connection refused", the VM may still be
-booting. Wait a moment and retry, or check status with `claudebox status <name>`.
+If `claudevm connect` fails with "connection refused", the VM may still be
+booting. Wait a moment and retry, or check status with `claudevm status <name>`.
 
 ### Claude Code not found in VM
 
@@ -332,13 +332,13 @@ Check with `npm bin -g` and add to `~/.bashrc` if needed.
 Lima sets up port forwarding when the VM starts. If a port isn't working:
 1. Verify the service is actually listening inside the VM: `ss -tlnp | grep <port>`
 2. Check the port is in `portForwards` in `template.yaml`
-3. Try `claudebox forward <name> <port>` for an explicit tunnel
+3. Try `claudevm forward <name> <port>` for an explicit tunnel
 
 ### Reclaim disk space
 
 ```bash
 # Remove a VM entirely
-claudebox destroy myproject
+claudevm destroy myproject
 
 # Prune Lima's image cache (frees downloaded images)
 limactl prune

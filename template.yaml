@@ -100,13 +100,13 @@ provision:
     fi
 
     echo "==> Configuring sudoers"
-    cat > /etc/sudoers.d/claudebox << 'SUDOERS'
+    cat > /etc/sudoers.d/claudevm << 'SUDOERS'
     Defaults !lecture
     Defaults !requiretty
     Defaults timestamp_timeout=300
     %sudo ALL=(ALL) NOPASSWD: ALL
     SUDOERS
-    chmod 440 /etc/sudoers.d/claudebox
+    chmod 440 /etc/sudoers.d/claudevm
 
     echo "==> Setting up claude user SSH access"
     # Lima creates a user with the same name as the host user; find their authorized_keys

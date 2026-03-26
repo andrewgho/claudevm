@@ -1,4 +1,4 @@
-# ~/.bashrc for claudebox VM
+# ~/.bashrc for claudevm VM
 
 # If not running interactively, don't do anything
 case $- in

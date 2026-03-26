@@ -1,13 +1,13 @@
-# claudebox — development notes
+# claudevm — development notes
 
-claudebox is a bash CLI that creates and manages isolated Debian 13 VMs (via Lima)
+claudevm is a bash CLI that creates and manages isolated Debian 13 VMs (via Lima)
 for running Claude Code with full permissions. The VM is the sandbox; Claude can do
 anything inside it without touching the host.
 
 ## Repository layout
 
 ```
-bin/claudebox      Main CLI script (~430 lines bash)
+bin/claudevm      Main CLI script (~430 lines bash)
 template.yaml      Lima VM definition (OS, resources, provision script, port forwards)
 home-seed/         Dotfiles seeded into /home/claude/ on every new VM
 README.md          User-facing documentation
@@ -64,7 +64,7 @@ Three things are written into the VM:
 3. `~/.claude.json` — copied from Mac with `/home/claude/work` project entry injected
 
 Tokens expire ~12 hours after issue. Both access and refresh tokens rotate on each
-use (this is normal). Run `claudebox creds <name>` to re-sync after re-authenticating
+use (this is normal). Run `claudevm creds <name>` to re-sync after re-authenticating
 on the Mac.
 
 ## Settings written to the VM
@@ -83,7 +83,7 @@ on the Mac.
 
 ## Adding a new command
 
-1. Write a `cmd_<name>()` function in `bin/claudebox`
+1. Write a `cmd_<name>()` function in `bin/claudevm`
 2. Add a `<name>) cmd_<name> "$@" ;;` line in the `case` dispatch block
 3. Add a line to the `usage()` heredoc
 
@@ -95,6 +95,6 @@ on the Mac.
   provision scripts continue after. `wait_provision` polls for
   `/var/lib/cloud/instance/boot-finished`.
 - Port forwards in `template.yaml` only apply to newly created VMs. Use
-  `claudebox forward <name> <port>` for existing VMs.
+  `claudevm forward <name> <port>` for existing VMs.
 - `limactl shell <name> -- <cmd>` runs as the Lima user (macOS username), not as
   `claude`. Use `claude_ssh` for commands that need to run as the `claude` user.

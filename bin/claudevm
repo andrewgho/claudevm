@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# claudebox - manage isolated Debian development VMs via Lima
-# Usage: claudebox <command> [name]
+# claudevm - manage isolated Debian development VMs via Lima
+# Usage: claudevm <command> [name]
 
 set -euo pipefail
 
-CLAUDEBOX_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-TEMPLATE="$CLAUDEBOX_DIR/template.yaml"
-HOME_SEED="$CLAUDEBOX_DIR/home-seed"
+CLAUDEVM_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+TEMPLATE="$CLAUDEVM_DIR/template.yaml"
+HOME_SEED="$CLAUDEVM_DIR/home-seed"
 CLAUDE_SESSION="claude"
 
 # ── helpers ─────────────────────────────────────────────────────────────────
 
-die() { echo "claudebox: error: $*" >&2; exit 1; }
+die() { echo "claudevm: error: $*" >&2; exit 1; }
 
 require_name() {
     [ -n "${1:-}" ] || die "VM name required"
@@ -105,7 +105,7 @@ populate_home() {
 #
 # Token expiry note: the access token may have expired; Claude Code should use
 # the refresh token automatically. If it still prompts for login, run
-# 'claudebox creds <name>' after re-authenticating on the Mac.
+# 'claudevm creds <name>' after re-authenticating on the Mac.
 sync_credentials() {
     local name="$1"
     local creds
@@ -190,7 +190,7 @@ silent_init() {
     else
         echo "    Warning: headless initialization returned an error (exit $?)."
         echo "    The setup wizard may appear on first interactive launch."
-        echo "    If prompted to log in, re-run: claudebox creds $name"
+        echo "    If prompted to log in, re-run: claudevm creds $name"
     fi
 }
 
@@ -202,7 +202,7 @@ cmd_create() {
 
     # Check if already exists
     if limactl list --format '{{.Name}}' 2>/dev/null | grep -qx "$name"; then
-        die "VM '$name' already exists. Use 'claudebox destroy $name' first, or 'claudebox claude $name' to connect."
+        die "VM '$name' already exists. Use 'claudevm destroy $name' first, or 'claudevm claude $name' to connect."
     fi
 
     echo "==> Creating VM '$name' (this will take several minutes on first run)"
@@ -231,7 +231,7 @@ cmd_claude() {
     require_running "$name"
 
     echo "==> Attaching to Claude Code session in VM '$name'..."
-    echo "    (tmux session '$CLAUDE_SESSION' — detach with Ctrl-b d)"
+    echo "    (tmux session '$CLAUDE_SESSION' — detach with Ctrl-q d)"
     echo ""
 
     # Attach to existing tmux session or create new one running Claude Code.
@@ -283,7 +283,7 @@ cmd_suspend() {
     name=$(require_name "${1:-}")
     echo "==> Suspending VM '$name'..."
     limactl stop "$name"
-    echo "==> VM '$name' suspended. Resume with: claudebox resume $name"
+    echo "==> VM '$name' suspended. Resume with: claudevm resume $name"
 }
 
 cmd_resume() {
@@ -341,7 +341,7 @@ cmd_ssh_config() {
     key=$(awk '/^  IdentityFile / {gsub(/"/, "", $2); print $2}' "$cfg")
 
     cat <<EOF
-Host claudebox-$name
+Host claudevm-$name
     HostName 127.0.0.1
     Port $port
     User claude
@@ -363,12 +363,12 @@ cmd_status() {
 }
 
 cmd_port_forward() {
-    # Ad-hoc port forwarding: claudebox forward <name> <guest-port> [host-port]
+    # Ad-hoc port forwarding: claudevm forward <name> <guest-port> [host-port]
     local name="${1:-}"
     local guest_port="${2:-}"
     local host_port="${3:-$guest_port}"
     name=$(require_name "$name")
-    [ -n "$guest_port" ] || die "Usage: claudebox forward <name> <guest-port> [host-port]"
+    [ -n "$guest_port" ] || die "Usage: claudevm forward <name> <guest-port> [host-port]"
     require_running "$name"
 
     local opts
@@ -382,32 +382,32 @@ cmd_port_forward() {
 
 usage() {
     cat <<'EOF'
-claudebox - manage isolated Debian development VMs
+claudevm - manage isolated Debian development VMs
 
 Usage:
-  claudebox create <name>          Create VM, provision, drop into Claude Code
-  claudebox claude <name>          Attach to (or start) Claude Code tmux session
-  claudebox connect <name>         Interactive bash shell (as user claude)
-  claudebox root <name>            Interactive shell as root
-  claudebox suspend <name>         Stop the VM (preserves disk)
-  claudebox resume <name>          Start a suspended VM
-  claudebox destroy <name>         Permanently delete VM and all data
-  claudebox list                   List all VMs
-  claudebox status [name]          Show VM status
-  claudebox ip <name>              Show VM networking info
-  claudebox ssh-config <name>      Print SSH config block for ~/.ssh/config
-  claudebox creds <name>            Re-sync Claude Code credentials from Mac Keychain
-  claudebox forward <name> <port> [host-port]
+  claudevm create <name>          Create VM, provision, drop into Claude Code
+  claudevm claude <name>          Attach to (or start) Claude Code tmux session
+  claudevm connect <name>         Interactive bash shell (as user claude)
+  claudevm root <name>            Interactive shell as root
+  claudevm suspend <name>         Stop the VM (preserves disk)
+  claudevm resume <name>          Start a suspended VM
+  claudevm destroy <name>         Permanently delete VM and all data
+  claudevm list                   List all VMs
+  claudevm status [name]          Show VM status
+  claudevm ip <name>              Show VM networking info
+  claudevm ssh-config <name>      Print SSH config block for ~/.ssh/config
+  claudevm creds <name>            Re-sync Claude Code credentials from Mac Keychain
+  claudevm forward <name> <port> [host-port]
                                    Ad-hoc port forward from host to VM
 
 Notes:
   - Claude Code runs in bypassPermissions mode (set via settings.json defaultMode).
-  - The tmux session is named 'claude'. Detach with Ctrl-b d; reattach with
-    'claudebox claude <name>'.
+  - The tmux session is named 'claude'. Detach with Ctrl-q d; reattach with
+    'claudevm claude <name>'.
   - Services running on common ports (3000, 4000, 5000, 8000, 8080, 8888,
     9000) are automatically forwarded to localhost on the Mac.
-  - Config: <claudebox-dir>/template.yaml (VM resources, port forwards)
-  - Home seed: <claudebox-dir>/home-seed/ (dotfiles copied on create)
+  - Config: <claudevm-dir>/template.yaml (VM resources, port forwards)
+  - Home seed: <claudevm-dir>/home-seed/ (dotfiles copied on create)
 EOF
 }
 
@@ -430,5 +430,5 @@ case "$CMD" in
     forward)      cmd_port_forward "$@" ;;
     help|--help|-h) usage ;;
     "")           usage ;;
-    *)            die "Unknown command: $CMD. Run 'claudebox help' for usage." ;;
+    *)            die "Unknown command: $CMD. Run 'claudevm help' for usage." ;;
 esac
