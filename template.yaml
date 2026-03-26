@@ -1,6 +1,6 @@
 minimumLimaVersion: 2.0.0
 
-# Claudebox VM template - Debian 13 (Trixie) development VM
+# Claudevm VM template - Debian 13 (Trixie) development VM
 # No host directory mounts; outbound internet access; services reachable
 # from host via port forwarding.
 
