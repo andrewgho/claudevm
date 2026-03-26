@@ -1,14 +1,34 @@
-# Readline configuration
-"\e[A": history-search-backward
-"\e[B": history-search-forward
-"\e[C": forward-char
-"\e[D": backward-char
+Control-SPACE: forward-word
 
-# Make Tab autocomplete case-insensitive
-set completion-ignore-case on
-
-# Show all completions at once
-set show-all-if-ambiguous on
-
-# Immediately add a trailing slash when autocompleting symlinks to directories
-set mark-symlinked-directories on
+# Swallow stray C-x
+"\C-x\C-m": "\C-m"
+"\C-x\C-p": "\C-p"
+"\C-x\C-r": "\C-r"
+"\C-x\C-u": "\C-u"
+"\C-x ": " "
+"\C-xa": "a"
+"\C-xb": "b"
+"\C-xc": "c"
+"\C-xd": "d"
+"\C-xe": "e"
+"\C-xf": "f"
+"\C-xg": "g"
+"\C-xh": "h"
+"\C-xi": "i"
+"\C-xj": "j"
+"\C-xk": "k"
+"\C-xl": "l"
+"\C-xm": "m"
+"\C-xn": "n"
+"\C-xo": "o"
+"\C-xp": "p"
+"\C-xq": "q"
+"\C-xr": "r"
+"\C-xs": "s"
+"\C-xt": "t"
+"\C-xu": "u"
+"\C-xv": "v"
+"\C-xw": "w"
+"\C-xx": "x"
+"\C-xy": "y"
+"\C-xz": "z"
