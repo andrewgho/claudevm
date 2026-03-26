@@ -91,10 +91,6 @@ provision:
       libssl-dev \
       libffi-dev
 
-    echo "==> Installing Node.js 22 from NodeSource"
-    curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
-    apt-get install -y nodejs
-
     echo "==> Installing Rust"
     # Install rustup for the claude user (done in user provision step)
 
@@ -128,7 +124,23 @@ provision:
     mkdir -p /home/claude/work /home/claude/bin
     chown -R claude:claude /home/claude
 
-    echo "==> Installing Claude Code globally"
-    npm install -g @anthropic-ai/claude-code
-
     echo "==> Provision complete"
+
+
+- mode: user
+  script: |
+    #!/bin/bash
+    set -euo pipefail
+
+    # Runs as the lima host user; use sudo -u claude to install into claude's home.
+    echo "==> Installing NVM + Node.js 22 + Claude Code as claude user"
+    sudo -u claude -i bash -euo pipefail << 'CLAUDE_SETUP'
+      export NVM_DIR="$HOME/.nvm"
+      curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
+      source "$NVM_DIR/nvm.sh"
+      nvm install 22
+      nvm alias default 22
+      npm install -g @anthropic-ai/claude-code
+    CLAUDE_SETUP
+
+    echo "==> Claude user setup complete"
