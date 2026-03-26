@@ -1,15 +1,23 @@
-# claudevm
+# ClaudeVM - run Claude Code in a Debian VM from macOS
 
-Isolated Debian development VMs for running Claude Code without permission
-restrictions. Each VM is fully independent — Claude can do whatever it wants
-inside the VM, and you can tear it down and recreate it at any time.
+This tool creates an isolated Debian development VM on macOS with Lima,
+so you can more safely run Claude Code without permission restrictions,
+while still limiting the blast radius of Claude's actions. Inside the VM,
+Claude can install tools, search the web, and muck with the system, while
+not (usually) touching your actual host system.
+
+Each VM is created with your existing Claude Code settings and OAuth
+credentials already set up, so you can run a single command to get to a
+Claude Code session in a new VM. The Claude Code session is also run by
+default in tmux, so you can freely detach and reattach from the session.
+The VM can be torn down when you are finished, or you hit a dead end.
 
 ## Quick start
 
 ```bash
-# Add claudevm to your PATH (one-time setup)
-echo 'export PATH="$HOME/work/claudevm/bin:$PATH"' >> ~/.zshrc
-source ~/.zshrc
+# Add claudevm to your PATH in your shell rc file, or add an alias
+export PATH="$HOME/path/to/claudevm/bin:$PATH"
+alias claudevm="$HOME/path/to/claudevm/bin/claudevm"
 
 # Create a new VM and drop into a Claude Code session
 claudevm create myproject
@@ -34,10 +42,10 @@ Lima is already installed if you use Colima (`brew info lima` to verify).
 ### Setup
 
 ```bash
-# Clone or place this repo
+# Clone or copy this repository here
 cd ~/work/claudevm
 
-# Add to PATH
+# Add to your shell $PATH (this example assumes default zsh)
 echo 'export PATH="$HOME/work/claudevm/bin:$PATH"' >> ~/.zshrc
 source ~/.zshrc
 
@@ -62,6 +70,9 @@ claudevm help
 | `claudevm ip <name>` | Show VM networking info |
 | `claudevm ssh-config <name>` | Print SSH config block for `~/.ssh/config` |
 | `claudevm forward <name> <port> [host-port]` | Ad-hoc port forward |
+
+To do things like copy files in and out of the VM, you can use `limactl`
+commands directly (`limactl copy -r myproject:path/to/file.txt .`).
 
 ---
 
@@ -93,10 +104,10 @@ Rust is **not** pre-installed (large download; install with `rustup` if needed).
 `claudevm create` and `claudevm claude` both connect you to a **tmux session**
 named `claude` running inside the VM. This means:
 
-- Closing the terminal window does **not** stop Claude Code.
-- `claudevm claude <name>` always reattaches to the running session.
+- Closing the terminal window does **not** stop Claude Code. (_Exiting_ Claude Code does stop it.)
+- `claudevm claude <name>` always reattaches to the running session, if it exists.
 - If Claude Code has exited, `claudevm claude` starts a fresh session.
-- Detach from the session at any time with **Ctrl-b d**.
+- Detach from the session at any time with **Ctrl+Q d** (tmux default prefix is changed to Ctrl+Q to allow Ctrl+B to for readline and Claude Code).
 
 Inside the tmux session, Claude Code runs as:
 
