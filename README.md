@@ -109,14 +109,37 @@ named `claude` running inside the VM. This means:
 - If Claude Code has exited, `claudevm claude` starts a fresh session.
 - Detach from the session at any time with **Ctrl+Q d** (tmux default prefix is changed to Ctrl+Q to allow Ctrl+B to for readline and Claude Code).
 
-Inside the tmux session, Claude Code runs as:
+Inside the tmux session, Claude Code runs with `defaultMode: bypassPermissions`
+set in `~/.claude/settings.json`, with all tools pre-approved. This grants
+Claude full access to everything inside the VM. Because the VM has no access
+to your Mac's filesystem or credentials, this is safe.
 
-```
-claude --dangerously-skip-permissions
-```
+### SSH agent forwarding
 
-This grants Claude full access to everything inside the VM. Because the VM has
-no access to your Mac's filesystem or credentials, this is safe.
+`claudevm connect` and `claudevm claude` connect via SSH without explicitly
+enabling or disabling agent forwarding. Whether your SSH agent is forwarded
+into the VM depends on your `~/.ssh/config`:
+
+- If you have `ForwardAgent yes` set globally (e.g. `Host *`), your agent
+  **will** be forwarded, giving Claude access to your SSH keys.
+- If you don't, it **won't** be forwarded by default.
+
+`claudevm root` uses `limactl shell` internally, which may forward the agent
+independently of your SSH config.
+
+Agent forwarding is useful when you want Claude to push to GitHub or access
+remote servers on your behalf. It also expands the blast radius — a
+misbehaving Claude session could push to repositories or connect to hosts
+using your keys. Be aware of this if your agent holds high-privilege keys.
+
+To check whether your agent is available inside a VM:
+
+```bash
+claudevm connect myproject
+# Inside VM:
+echo $SSH_AUTH_SOCK   # non-empty means agent is forwarded
+ssh-add -l            # lists forwarded keys
+```
 
 ---
 
