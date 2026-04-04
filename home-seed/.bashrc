@@ -1,13 +1,25 @@
 # ~/.bashrc for claudevm VM
 
-# NVM and PATH must be set before the interactivity guard so that non-interactive
-# login shells (e.g. `bash -l -c '...'`) can find claude and other tools.
+# Environment variables — set before the interactivity guard so they're available
+# in all login shells, including non-interactive ones (e.g. `bash -l -c '...'`
+# used to launch Claude Code via tmux).
 export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && source "$NVM_DIR/nvm.sh"
 [ -s "$NVM_DIR/bash_completion" ] && source "$NVM_DIR/bash_completion"
 
 # PATH: include ~/bin and common tool locations
 export PATH="$HOME/bin:/usr/local/bin:/usr/local/go/bin:$HOME/go/bin:$HOME/.cargo/bin:$PATH"
+
+# Go
+export GOPATH="$HOME/go"
+
+# Editor
+export EDITOR=emacs
+export VISUAL=emacs
+
+# Pager
+export PAGER=less
+export LESS=-XR
 
 # If not running interactively, don't do anything beyond environment setup
 case $- in
@@ -38,11 +50,6 @@ alias la='ls -A'
 alias l='ls -CF'
 alias grep='grep --color=auto'
 
-# Safety
-alias rm='rm -i'
-alias cp='cp -i'
-alias mv='mv -i'
-
 # Convenience
 alias ..='cd ..'
 alias ...='cd ../..'
@@ -51,16 +58,10 @@ alias gs='git status'
 alias gd='git diff'
 alias gl='git log --oneline -20'
 
-# Go
-export GOPATH="$HOME/go"
-
-# Editor
-export EDITOR=emacs
-export VISUAL=emacs
-
-# Pager
-export PAGER=less
-export LESS='-R'
+alias e=emacs
+alias l=less
+gdc() { git diff --color=always $@ | less -SRF; }
+gsc() { git show --color=always $@ | less -SRF; }
 
 # Load local overrides if present
 [ -f "$HOME/.bashrc.local" ] && source "$HOME/.bashrc.local"
