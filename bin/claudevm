@@ -34,21 +34,21 @@ lima_ssh_config() {
     echo "$cfg"
 }
 
-# Return SSH options for connecting as the claude user to a VM.
-# Uses Lima's SSH config for key/port/host, overrides User and disables
-# ControlMaster (which is keyed to the lima user, not claude).
-claude_ssh_opts() {
+# Return SSH options for connecting to a VM as the Lima user ($USER).
+# Uses Lima's SSH config for key/port; disables ControlMaster (Lima's socket
+# is tied to a specific path and may not be accessible here).
+vm_ssh_opts() {
     local name="$1"
     local cfg port key
     cfg=$(lima_ssh_config "$name")
     port=$(awk '/^  Port / {print $2}' "$cfg")
     key=$(awk '/^  IdentityFile / {gsub(/"/, "", $2); print $2}' "$cfg")
     echo "-p ${port} -i ${key} -o StrictHostKeyChecking=no -o UserKnownHostsFile=\
-/dev/null -o LogLevel=ERROR -o ControlMaster=no -o User=claude"
+/dev/null -o LogLevel=ERROR -o ControlMaster=no -o User=${USER}"
 }
 
-# SCP as the claude user into/from a VM
-claude_scp() {
+# SCP into/from a VM as the Lima user
+vm_scp() {
     local name="$1"
     shift
     local cfg port key
@@ -63,14 +63,20 @@ claude_scp() {
         "$@"
 }
 
-# SSH as the claude user into a VM
-claude_ssh() {
+# SSH into a VM as the Lima user
+vm_ssh() {
     local name="$1"
     shift
     local opts
-    opts=$(claude_ssh_opts "$name")
+    opts=$(vm_ssh_opts "$name")
     # shellcheck disable=SC2086
     ssh $opts 127.0.0.1 "$@"
+}
+
+# Return the Lima user's home directory on the VM
+vm_home() {
+    local name="$1"
+    vm_ssh "$name" 'echo $HOME'
 }
 
 # Wait for cloud-init to finish (called after limactl start)
@@ -93,21 +99,21 @@ wait_provision() {
     die "Provisioning timed out after 10 minutes"
 }
 
-# Populate the claude user's home directory from home-seed
+# Populate the Lima user's home directory from home-seed
 populate_home() {
     local name="$1"
-    echo "==> Populating claude home directory from home-seed..."
+    local home
+    home=$(vm_home "$name")
+    echo "==> Populating home directory from home-seed..."
 
-    # Build a tar of the home-seed directory and pipe it into the VM.
+    # Build a tar of the home-seed directory and pipe it into the VM as the Lima user.
     # COPYFILE_DISABLE suppresses macOS extended-attribute entries (.__MACOSX,
     # com.apple.provenance, etc.) that produce warnings from GNU tar in the VM.
     COPYFILE_DISABLE=1 tar --no-xattrs -C "$HOME_SEED" -czf - . \
-        | limactl shell "$name" -- \
-            sudo bash -c 'tar -xzf - -C /home/claude/ && chown -R claude:claude /home/claude/'
+        | vm_ssh "$name" "tar -xzf - -C '$home'"
 
     # Create work directory if not in seed
-    limactl shell "$name" -- \
-        sudo -u claude bash -c 'mkdir -p ~/work ~/bin ~/go'
+    vm_ssh "$name" 'mkdir -p ~/work ~/bin ~/go'
 
     echo "==> Home directory populated."
 }
@@ -133,7 +139,7 @@ sync_credentials() {
 
     # Write credentials file
     printf '%s\n' "$creds" \
-        | claude_ssh "$name" \
+        | vm_ssh "$name" \
             "mkdir -p ~/.claude && cat > ~/.claude/.credentials.json && chmod 600 ~/.claude/.credentials.json"
 
     # Write VM-specific settings.json.
@@ -141,7 +147,7 @@ sync_credentials() {
     # interactive "take responsibility" prompt that the CLI flag triggers).
     # permissions.allow pre-approves all tools so Claude never prompts for
     # individual tool uses — appropriate since this is an isolated sandbox VM.
-    claude_ssh "$name" "cat > ~/.claude/settings.json && chmod 644 ~/.claude/settings.json" << 'SETTINGS'
+    vm_ssh "$name" "cat > ~/.claude/settings.json && chmod 644 ~/.claude/settings.json" << 'SETTINGS'
 {
   "defaultMode": "bypassPermissions",
   "permissions": {
@@ -168,11 +174,13 @@ SETTINGS
     # skips the workspace trust dialog and the bypass-permissions acknowledgment.
     local global_state="$HOME/.claude.json"
     if [ -f "$global_state" ]; then
+        local vm_work
+        vm_work="$(vm_home "$name")/work"
         python3 -c "
 import json, sys
 with open('$global_state') as f:
     d = json.load(f)
-d.setdefault('projects', {})['/home/claude/work'] = {
+d.setdefault('projects', {})['${vm_work}'] = {
     'allowedTools': [],
     'mcpContextUris': [],
     'mcpServers': {},
@@ -185,7 +193,7 @@ d.setdefault('projects', {})['/home/claude/work'] = {
     'hasClaudeMdExternalIncludesWarningShown': False,
 }
 print(json.dumps(d))
-" | claude_ssh "$name" "cat > ~/.claude.json && chmod 600 ~/.claude.json"
+" | vm_ssh "$name" "cat > ~/.claude.json && chmod 600 ~/.claude.json"
     fi
 
     echo "==> Credentials forwarded."
@@ -200,7 +208,7 @@ silent_init() {
     # -p/--print mode skips the interactive wizard entirely; --dangerously-skip-permissions
     # avoids any permission prompts; output is suppressed.
     # Use a login shell so .bash_profile/.bashrc are sourced and claude is on PATH.
-    if claude_ssh "$name" \
+    if vm_ssh "$name" \
         "bash -l -c 'cd ~/work && claude -p hello'"; then
         echo "==> Claude Code initialized."
     else
@@ -253,7 +261,7 @@ cmd_claude() {
     # Attach to existing tmux session or create new one running Claude Code.
     # If the session exists but Claude Code has exited (leaving a bare shell),
     # send it the command to restart Claude rather than just attaching.
-    claude_ssh "$name" -t "bash -l -c '
+    vm_ssh "$name" -t "bash -l -c '
         if tmux has-session -t \"$CLAUDE_SESSION\" 2>/dev/null; then
             # Session exists — check if claude is still running in it
             if ! tmux list-panes -t \"$CLAUDE_SESSION\" -F \"#{pane_current_command}\" \
@@ -269,13 +277,19 @@ cmd_claude() {
     '"
 }
 
-cmd_connect() {
+cmd_ssh() {
     local name
     name=$(require_name "${1:-}")
+    shift
     require_running "$name"
 
-    echo "==> Connecting to bash shell in VM '$name' (user: claude)..."
-    claude_ssh "$name" -t "bash -l"
+    local opts
+    opts=$(vm_ssh_opts "$name")
+    echo "==> Connecting to VM '$name'..."
+    # Extra args from $@ are SSH options inserted before the hostname so SSH
+    # treats them as flags, not as a remote command (e.g. -A for agent forwarding).
+    # shellcheck disable=SC2086
+    ssh $opts -t "$@" 127.0.0.1 "bash -l"
 }
 
 cmd_root() {
@@ -360,7 +374,7 @@ cmd_ssh_config() {
 Host claudevm-$name
     HostName 127.0.0.1
     Port $port
-    User claude
+    User $USER
     IdentityFile $key
     StrictHostKeyChecking no
     UserKnownHostsFile /dev/null
@@ -385,19 +399,20 @@ cmd_push() {
 
     if [ $# -eq 1 ]; then
         # Auto mode: mirror CWD to the same path relative to HOME in the VM
-        local rel remote_path
+        local rel remote_path home
         rel="${PWD#"$HOME"/}"
         [ "$rel" != "$PWD" ] || die "Current directory ($PWD) is not under \$HOME ($HOME)"
-        remote_path="/home/claude/$rel"
+        home=$(vm_home "$name")
+        remote_path="$home/$rel"
         echo "==> Pushing $PWD -> VM:$remote_path"
         COPYFILE_DISABLE=1 tar --no-xattrs -C "$PWD" -czf - . \
-            | claude_ssh "$name" "mkdir -p '$remote_path' && tar -xzf - -C '$remote_path'"
+            | vm_ssh "$name" "mkdir -p '$remote_path' && tar -xzf - -C '$remote_path'"
     else
         local src dst
         src="${2:-}"
         [ -n "$src" ] || die "Usage: claudevm push <name> [<local-path> [<remote-path>]]"
         dst="${3:-~/work/$(basename "$src")}"
-        claude_scp "$name" -r "$src" "claude@127.0.0.1:$dst"
+        vm_scp "$name" -r "$src" "$USER@127.0.0.1:$dst"
     fi
 }
 
@@ -408,18 +423,19 @@ cmd_pull() {
 
     if [ $# -eq 1 ]; then
         # Auto mode: mirror the same path relative to HOME in the VM to CWD
-        local rel remote_path
+        local rel remote_path home
         rel="${PWD#"$HOME"/}"
         [ "$rel" != "$PWD" ] || die "Current directory ($PWD) is not under \$HOME ($HOME)"
-        remote_path="/home/claude/$rel"
+        home=$(vm_home "$name")
+        remote_path="$home/$rel"
         echo "==> Pulling VM:$remote_path -> $PWD"
-        claude_ssh "$name" "tar -C '$remote_path' -czf - ." | tar -xzf - -C "$PWD"
+        vm_ssh "$name" "tar -C '$remote_path' -czf - ." | tar -xzf - -C "$PWD"
     else
         local src dst
         src="${2:-}"
         [ -n "$src" ] || die "Usage: claudevm pull <name> [<remote-path> [<local-path>]]"
         dst="${3:-.}"
-        claude_scp "$name" -r "claude@127.0.0.1:$src" "$dst"
+        vm_scp "$name" -r "$USER@127.0.0.1:$src" "$dst"
     fi
 }
 
@@ -433,7 +449,7 @@ cmd_port_forward() {
     require_running "$name"
 
     local opts
-    opts=$(claude_ssh_opts "$name")
+    opts=$(vm_ssh_opts "$name")
     echo "==> Forwarding host:$host_port -> VM:$guest_port (Ctrl-C to stop)"
     # shellcheck disable=SC2086
     ssh $opts -N -L "${host_port}:127.0.0.1:${guest_port}" 127.0.0.1
@@ -448,7 +464,8 @@ claudevm - manage isolated Debian development VMs
 Usage:
   claudevm create <name>          Create VM, provision, drop into Claude Code
   claudevm claude <name>          Attach to (or start) Claude Code tmux session
-  claudevm connect <name>         Interactive bash shell (as user claude)
+  claudevm ssh <name> [ssh-opts]  Interactive shell; extra opts forwarded to SSH
+                                   (e.g. claudevm ssh myvm -A  # forward SSH agent)
   claudevm root <name>            Interactive shell as root
   claudevm suspend <name>         Stop the VM (preserves disk)
   claudevm resume <name>          Start a suspended VM
@@ -458,13 +475,13 @@ Usage:
   claudevm ip <name>              Show VM networking info
   claudevm ssh-config <name>      Print SSH config block for ~/.ssh/config
   claudevm push <name>              Sync current dir to VM at same path relative to HOME
-                                     (e.g. ~/work/proj -> VM:/home/claude/work/proj)
+                                     (e.g. ~/work/proj -> VM:~/work/proj)
   claudevm push <name> <local-path> [<remote-path>]
                                    Copy file/dir from host to VM (default: ~/work/<basename>)
                                    Quote remote paths with ~ to prevent local expansion:
                                      claudevm push myvm file.txt '~/.config/file.txt'
   claudevm pull <name>              Sync current dir from VM at same path relative to HOME
-                                     (e.g. VM:/home/claude/work/proj -> ~/work/proj)
+                                     (e.g. VM:~/work/proj -> ~/work/proj)
   claudevm pull <name> <remote-path> [<local-path>]
                                    Copy file/dir from VM to host (default: current dir)
                                    Quote remote paths with ~:
@@ -491,7 +508,7 @@ case "$CMD" in
     create)       cmd_create "$@" ;;
     creds)        cmd_creds "$@" ;;
     claude)       cmd_claude "$@" ;;
-    connect)      cmd_connect "$@" ;;
+    ssh|connect)  cmd_ssh "$@" ;;
     root)         cmd_root "$@" ;;
     suspend)      cmd_suspend "$@" ;;
     resume)       cmd_resume "$@" ;;

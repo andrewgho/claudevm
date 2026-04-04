@@ -92,12 +92,7 @@ provision:
       libffi-dev
 
     echo "==> Installing Rust"
-    # Install rustup for the claude user (done in user provision step)
-
-    echo "==> Creating claude user"
-    if ! id -u claude &>/dev/null; then
-      useradd -m -s /bin/bash -G sudo claude
-    fi
+    # Install rustup for the Lima user (done in user provision step)
 
     echo "==> Configuring sudoers"
     cat > /etc/sudoers.d/claudevm << 'SUDOERS'
@@ -108,22 +103,6 @@ provision:
     SUDOERS
     chmod 440 /etc/sudoers.d/claudevm
 
-    echo "==> Setting up claude user SSH access"
-    # Lima creates a user with the same name as the host user; find their authorized_keys
-    # (home dir may be /home/<user>.linux — so we search rather than guess the path)
-    LIMA_KEYS=$(find /home -maxdepth 3 -name authorized_keys 2>/dev/null | head -1)
-    mkdir -p /home/claude/.ssh
-    if [ -n "$LIMA_KEYS" ]; then
-      cp "$LIMA_KEYS" /home/claude/.ssh/authorized_keys
-    fi
-    chown -R claude:claude /home/claude/.ssh
-    chmod 700 /home/claude/.ssh
-    [ -f /home/claude/.ssh/authorized_keys ] && chmod 600 /home/claude/.ssh/authorized_keys
-
-    echo "==> Creating ~/work and ~/bin directories"
-    mkdir -p /home/claude/work /home/claude/bin
-    chown -R claude:claude /home/claude
-
     echo "==> Provision complete"
 
 
@@ -132,15 +111,14 @@ provision:
     #!/bin/bash
     set -euo pipefail
 
-    # Runs as the lima host user; use sudo -u claude to install into claude's home.
-    echo "==> Installing NVM + Node.js 22 + Claude Code as claude user"
-    sudo -u claude -i bash -euo pipefail << 'CLAUDE_SETUP'
-      export NVM_DIR="$HOME/.nvm"
-      curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
-      source "$NVM_DIR/nvm.sh"
-      nvm install 22
-      nvm alias default 22
-      npm install -g @anthropic-ai/claude-code
-    CLAUDE_SETUP
+    # Runs as the Lima user (same username as the host macOS user).
+    echo "==> Installing NVM + Node.js 22 + Claude Code"
+    export NVM_DIR="$HOME/.nvm"
+    curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
+    # shellcheck disable=SC1091
+    source "$NVM_DIR/nvm.sh"
+    nvm install 22
+    nvm alias default 22
+    npm install -g @anthropic-ai/claude-code
 
-    echo "==> Claude user setup complete"
+    echo "==> Setup complete"

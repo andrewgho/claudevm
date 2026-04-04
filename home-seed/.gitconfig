@@ -1,3 +1,6 @@
+[user]
+    name = Andrew Ho
+    email = andrew@zeuscat.com
 [core]
     editor = emacs
     pager = less -R
