@@ -47,6 +47,22 @@ claude_ssh_opts() {
 /dev/null -o LogLevel=ERROR -o ControlMaster=no -o User=claude"
 }
 
+# SCP as the claude user into/from a VM
+claude_scp() {
+    local name="$1"
+    shift
+    local cfg port key
+    cfg=$(lima_ssh_config "$name")
+    port=$(awk '/^  Port / {print $2}' "$cfg")
+    key=$(awk '/^  IdentityFile / {gsub(/"/, "", $2); print $2}' "$cfg")
+    scp -P "$port" -i "$key" \
+        -o StrictHostKeyChecking=no \
+        -o UserKnownHostsFile=/dev/null \
+        -o LogLevel=ERROR \
+        -o ControlMaster=no \
+        "$@"
+}
+
 # SSH as the claude user into a VM
 claude_ssh() {
     local name="$1"
@@ -362,6 +378,51 @@ cmd_status() {
     fi
 }
 
+cmd_push() {
+    local name
+    name=$(require_name "${1:-}")
+    require_running "$name"
+
+    if [ $# -eq 1 ]; then
+        # Auto mode: mirror CWD to the same path relative to HOME in the VM
+        local rel remote_path
+        rel="${PWD#"$HOME"/}"
+        [ "$rel" != "$PWD" ] || die "Current directory ($PWD) is not under \$HOME ($HOME)"
+        remote_path="/home/claude/$rel"
+        echo "==> Pushing $PWD -> VM:$remote_path"
+        COPYFILE_DISABLE=1 tar --no-xattrs -C "$PWD" -czf - . \
+            | claude_ssh "$name" "mkdir -p '$remote_path' && tar -xzf - -C '$remote_path'"
+    else
+        local src dst
+        src="${2:-}"
+        [ -n "$src" ] || die "Usage: claudevm push <name> [<local-path> [<remote-path>]]"
+        dst="${3:-~/work/$(basename "$src")}"
+        claude_scp "$name" -r "$src" "claude@127.0.0.1:$dst"
+    fi
+}
+
+cmd_pull() {
+    local name
+    name=$(require_name "${1:-}")
+    require_running "$name"
+
+    if [ $# -eq 1 ]; then
+        # Auto mode: mirror the same path relative to HOME in the VM to CWD
+        local rel remote_path
+        rel="${PWD#"$HOME"/}"
+        [ "$rel" != "$PWD" ] || die "Current directory ($PWD) is not under \$HOME ($HOME)"
+        remote_path="/home/claude/$rel"
+        echo "==> Pulling VM:$remote_path -> $PWD"
+        claude_ssh "$name" "tar -C '$remote_path' -czf - ." | tar -xzf - -C "$PWD"
+    else
+        local src dst
+        src="${2:-}"
+        [ -n "$src" ] || die "Usage: claudevm pull <name> [<remote-path> [<local-path>]]"
+        dst="${3:-.}"
+        claude_scp "$name" -r "claude@127.0.0.1:$src" "$dst"
+    fi
+}
+
 cmd_port_forward() {
     # Ad-hoc port forwarding: claudevm forward <name> <guest-port> [host-port]
     local name="${1:-}"
@@ -396,6 +457,18 @@ Usage:
   claudevm status [name]          Show VM status
   claudevm ip <name>              Show VM networking info
   claudevm ssh-config <name>      Print SSH config block for ~/.ssh/config
+  claudevm push <name>              Sync current dir to VM at same path relative to HOME
+                                     (e.g. ~/work/proj -> VM:/home/claude/work/proj)
+  claudevm push <name> <local-path> [<remote-path>]
+                                   Copy file/dir from host to VM (default: ~/work/<basename>)
+                                   Quote remote paths with ~ to prevent local expansion:
+                                     claudevm push myvm file.txt '~/.config/file.txt'
+  claudevm pull <name>              Sync current dir from VM at same path relative to HOME
+                                     (e.g. VM:/home/claude/work/proj -> ~/work/proj)
+  claudevm pull <name> <remote-path> [<local-path>]
+                                   Copy file/dir from VM to host (default: current dir)
+                                   Quote remote paths with ~:
+                                     claudevm pull myvm '~/work/output.txt'
   claudevm creds <name>            Re-sync Claude Code credentials from Mac Keychain
   claudevm forward <name> <port> [host-port]
                                    Ad-hoc port forward from host to VM
@@ -427,6 +500,8 @@ case "$CMD" in
     status)       cmd_status "$@" ;;
     ip)           cmd_ip "$@" ;;
     ssh-config)   cmd_ssh_config "$@" ;;
+    push)         cmd_push "$@" ;;
+    pull)         cmd_pull "$@" ;;
     forward)      cmd_port_forward "$@" ;;
     help|--help|-h) usage ;;
     "")           usage ;;
