@@ -1,6 +1,15 @@
 # ~/.bashrc for claudevm VM
 
-# If not running interactively, don't do anything
+# NVM and PATH must be set before the interactivity guard so that non-interactive
+# login shells (e.g. `bash -l -c '...'`) can find claude and other tools.
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && source "$NVM_DIR/nvm.sh"
+[ -s "$NVM_DIR/bash_completion" ] && source "$NVM_DIR/bash_completion"
+
+# PATH: include ~/bin and common tool locations
+export PATH="$HOME/bin:/usr/local/bin:/usr/local/go/bin:$HOME/go/bin:$HOME/.cargo/bin:$PATH"
+
+# If not running interactively, don't do anything beyond environment setup
 case $- in
     *i*) ;;
       *) return;;
@@ -41,14 +50,6 @@ alias g='git'
 alias gs='git status'
 alias gd='git diff'
 alias gl='git log --oneline -20'
-
-# NVM (Node Version Manager) - installed per-user so claude can self-update
-export NVM_DIR="$HOME/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && source "$NVM_DIR/nvm.sh"
-[ -s "$NVM_DIR/bash_completion" ] && source "$NVM_DIR/bash_completion"
-
-# PATH: include ~/bin and common tool locations
-export PATH="$HOME/bin:/usr/local/bin:/usr/local/go/bin:$HOME/go/bin:$HOME/.cargo/bin:$PATH"
 
 # Go
 export GOPATH="$HOME/go"
