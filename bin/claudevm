@@ -196,6 +196,7 @@ SETTINGS
 import json, sys
 with open('$global_state') as f:
     d = json.load(f)
+d['remoteControlAtStartup'] = True
 d.setdefault('projects', {})['${vm_work}'] = {
     'allowedTools': [],
     'mcpContextUris': [],
@@ -302,15 +303,38 @@ cmd_ssh() {
     shift
     require_running "$name"
 
+    # Split remaining args into SSH flags and optional remote command.
+    # Args starting with '-' before the first non-flag arg (or '--') are passed
+    # to SSH as options. Everything after '--' or the first non-'-' arg is the
+    # remote command (e.g. 'claudevm ssh myvm -A foo' or 'claudevm ssh myvm -- foo').
+    local -a ssh_flags remote_cmd
+    local sep=false
+    for arg in "$@"; do
+        if $sep; then
+            remote_cmd+=("$arg")
+        elif [ "$arg" = "--" ]; then
+            sep=true
+        elif [ "${arg#-}" = "$arg" ]; then
+            # First non-flag arg: it and the rest form the remote command
+            remote_cmd+=("$arg")
+            sep=true
+        else
+            ssh_flags+=("$arg")
+        fi
+    done
+
     local opts
     opts=$(vm_ssh_opts "$name")
     push_title
     set_title "ClaudeVM: $name"
-    echo "==> Connecting to VM '$name'..."
-    # Extra args from $@ are SSH options inserted before the hostname so SSH
-    # treats them as flags, not as a remote command (e.g. -A for agent forwarding).
-    # shellcheck disable=SC2086
-    ssh $opts -t "$@" 127.0.0.1 "bash -l" || true
+    if [ ${#remote_cmd[@]} -eq 0 ]; then
+        echo "==> Connecting to VM '$name'..."
+        # shellcheck disable=SC2086
+        ssh $opts -t "${ssh_flags[@]+"${ssh_flags[@]}"}" 127.0.0.1 "bash -l" || true
+    else
+        # shellcheck disable=SC2086
+        ssh $opts "${ssh_flags[@]+"${ssh_flags[@]}"}" 127.0.0.1 "${remote_cmd[@]}" || true
+    fi
     pop_title
 }
 
@@ -486,8 +510,13 @@ claudevm - manage isolated Debian development VMs
 Usage:
   claudevm create <name>          Create VM, provision, drop into Claude Code
   claudevm claude <name>          Attach to (or start) Claude Code tmux session
-  claudevm ssh <name> [ssh-opts]  Interactive shell; extra opts forwarded to SSH
-                                   (e.g. claudevm ssh myvm -A  # forward SSH agent)
+  claudevm ssh <name> [ssh-opts] [-- cmd [args...]]
+                                 Interactive shell, or run a remote command.
+                                 Flags starting with '-' go to SSH; first non-flag
+                                 arg (or anything after --) is the remote command.
+                                   claudevm ssh myvm -A          # forward SSH agent
+                                   claudevm ssh myvm -- ls -la   # run remote command
+                                   claudevm ssh myvm -A -- foo   # both
   claudevm root <name>            Interactive shell as root
   claudevm suspend <name>         Stop the VM (preserves disk)
   claudevm resume <name>          Start a suspended VM
