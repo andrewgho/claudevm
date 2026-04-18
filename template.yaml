@@ -4,6 +4,10 @@ minimumLimaVersion: 2.0.0
 # No host directory mounts; outbound internet access; services reachable
 # from host via port forwarding.
 
+vmType: vz
+networks:
+- vzNAT: true
+
 images:
 - location: "https://cloud.debian.org/images/cloud/trixie/20251117-2299/debian-13-genericcloud-arm64-20251117-2299.qcow2"
   arch: "aarch64"
