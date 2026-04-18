@@ -57,6 +57,7 @@ alias g='git'
 alias gs='git status'
 alias gd='git diff'
 alias gl='git log --oneline -20'
+alias gup='git fetch origin && git rebase origin/$(git symbolic-ref --short HEAD)'
 
 alias e=emacs
 alias l=less
