@@ -75,18 +75,18 @@ vm_ssh() {
 
 # Set the terminal window title (xterm/iTerm2/most modern terminals)
 set_title() {
-    printf '\033]0;%s\007' "$1"
+    printf '\033]0;%s\007' "$1" >/dev/tty 2>/dev/null || true
 }
 
 # Push the current window title onto the terminal's title stack (xterm CSI 22t).
 # iTerm2 and most xterm-compatible terminals support this.
 push_title() {
-    printf '\033[22;0t'
+    printf '\033[22;0t' >/dev/tty 2>/dev/null || true
 }
 
 # Pop the most recently pushed title off the terminal's title stack (xterm CSI 23t).
 pop_title() {
-    printf '\033[23;0t'
+    printf '\033[23;0t' >/dev/tty 2>/dev/null || true
 }
 
 # Return the Lima user's home directory on the VM
