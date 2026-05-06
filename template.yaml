@@ -98,6 +98,15 @@ provision:
     echo "==> Installing Rust"
     # Install rustup for the Lima user (done in user provision step)
 
+    echo "==> Fixing vsock SSH hostname resolution"
+    # sshd has no AF_VSOCK case in its peer address formatter, so vsock
+    # connections report the client address as the literal string "UNKNOWN".
+    # On PTY login, something downstream of sshd calls getaddrinfo("UNKNOWN"),
+    # which falls through /etc/hosts to DNS and times out (~4s). Adding a hosts
+    # entry short-circuits the lookup before DNS is consulted. See also:
+    # https://gist.github.com/robbert1978/bbd0c1f8ac7283e32bd0bab17ba9de10#required-kill-the-10-second-login-dns-hang
+    echo '127.0.0.1 UNKNOWN' >> /etc/hosts
+
     echo "==> Configuring sudoers"
     cat > /etc/sudoers.d/claudevm << 'SUDOERS'
     Defaults !lecture
