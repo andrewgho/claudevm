@@ -42,6 +42,16 @@ so `~/.bashrc` is sourced and `claude` is on PATH.
 in Lima 2.x). We pass `-o ControlMaster=no` to avoid inheriting Lima's
 ControlMaster socket (which is tied to a specific path).
 
+**`127.0.0.1 UNKNOWN` in `/etc/hosts` eliminates the PTY connection delay.**
+Lima's VZ VMs use vsock (AF_VSOCK) for SSH. OpenSSH has no AF_VSOCK case in its
+peer address formatter, so vsock connections report the client address as the
+literal string `"UNKNOWN"`. On PTY login, sshd or the audit subsystem calls
+`getaddrinfo("UNKNOWN")`, which misses `/etc/hosts` (no entry), hits DNS, and
+times out — causing a ~4 second delay. Non-interactive commands skip this path
+and are instant. The fix is a single `/etc/hosts` entry that short-circuits the
+lookup; `template.yaml`'s provision script adds it automatically for new VMs.
+Existing VMs need: `echo '127.0.0.1 UNKNOWN' | sudo tee -a /etc/hosts`.
+
 **`vm_home` resolves the remote home path.** Rather than hardcoding `/home/$USER`,
 we SSH in and run `echo $HOME`. This is used anywhere we need the absolute path
 (e.g. `cmd_push`/`cmd_pull` auto-mode, injecting the project key into `.claude.json`).
