@@ -307,7 +307,7 @@ cmd_ssh() {
     # Args starting with '-' before the first non-flag arg (or '--') are passed
     # to SSH as options. Everything after '--' or the first non-'-' arg is the
     # remote command (e.g. 'claudevm ssh myvm -A foo' or 'claudevm ssh myvm -- foo').
-    local -a ssh_flags remote_cmd
+    local -a ssh_flags=() remote_cmd=()
     local sep=false
     for arg in "$@"; do
         if $sep; then
