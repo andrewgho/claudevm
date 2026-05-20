@@ -23,7 +23,7 @@ cp /path/to/claudevm/claudevm ~/claudevm
 claudevm create myproject
 
 # In another terminal: open a bash shell in the same VM
-claudevm connect myproject
+claudevm ssh myproject
 
 # Reconnect to an existing Claude Code session (e.g., after closing the window)
 claudevm claude myproject
@@ -61,7 +61,7 @@ claudevm help
 |---|---|
 | `claudevm create <name>` | Create VM, provision it, populate home dir, drop into Claude Code |
 | `claudevm claude <name>` | Attach to existing Claude Code session, or start a new one |
-| `claudevm connect <name>` | Interactive bash shell as user `claude` |
+| `claudevm ssh <name>` | Interactive bash shell (also accepts `connect` as alias) |
 | `claudevm root <name>` | Interactive shell as root |
 | `claudevm suspend <name>` | Stop VM (disk preserved) |
 | `claudevm resume <name>` | Start a suspended VM |
@@ -85,7 +85,7 @@ Defined in the `write_template()` function embedded in `claudevm`. Defaults:
 - **RAM**: 6 GiB
 - **Disk**: 40 GiB
 - **Mounts**: None (VM is isolated from host filesystem)
-- **User**: `claude` with passwordless sudo
+- **User**: your macOS username (`$USER`) with passwordless sudo
 
 ### Installed software
 
@@ -93,7 +93,7 @@ Base system: `build-essential`, `git`, `emacs-nox`, `vim`, `tmux`, `curl`,
 `wget`, `python3`, `golang`, `cmake`, `gcc`, `g++`, `make`, `jq`, `htop`,
 `rsync`, and more.
 
-Node.js 22 (from NodeSource), plus `@anthropic-ai/claude-code` globally installed.
+Node.js 22 (via NVM), plus `@anthropic-ai/claude-code` globally installed.
 
 Rust is **not** pre-installed (large download; install with `rustup` if needed).
 
@@ -107,7 +107,7 @@ named `claude` running inside the VM. This means:
 - Closing the terminal window does **not** stop Claude Code. (_Exiting_ Claude Code does stop it.)
 - `claudevm claude <name>` always reattaches to the running session, if it exists.
 - If Claude Code has exited, `claudevm claude` starts a fresh session.
-- Detach from the session at any time with **Ctrl+Q d** (tmux default prefix is changed to Ctrl+Q to allow Ctrl+B to for readline and Claude Code).
+- Detach from the session at any time with **Ctrl+B d** (standard tmux prefix). You can change this in your skeleton `~/.tmux.conf` — e.g. `set -g prefix C-q` to use Ctrl+Q and free up Ctrl+B for readline.
 
 Inside the tmux session, Claude Code runs with `defaultMode: bypassPermissions`
 set in `~/.claude/settings.json`, with all tools pre-approved. This grants
@@ -116,7 +116,7 @@ to your Mac's filesystem or credentials, this is safe.
 
 ### SSH agent forwarding
 
-`claudevm connect` and `claudevm claude` connect via SSH without explicitly
+`claudevm ssh` and `claudevm claude` connect via SSH without explicitly
 enabling or disabling agent forwarding. Whether your SSH agent is forwarded
 into the VM depends on your `~/.ssh/config`:
 
@@ -135,7 +135,7 @@ using your keys. Be aware of this if your agent holds high-privilege keys.
 To check whether your agent is available inside a VM:
 
 ```bash
-claudevm connect myproject
+claudevm ssh myproject
 # Inside VM:
 echo $SSH_AUTH_SOCK   # non-empty means agent is forwarded
 ssh-add -l            # lists forwarded keys
@@ -206,7 +206,7 @@ repository, so you can put anything there without it affecting other users.
   .bash_profile   # login shell
   .gitconfig      # git settings
   .tmux.conf      # tmux preferences
-  bin/            # ~/bin is on PATH; put custom scripts here
+  bin/            # add to PATH via your .bashrc if desired
 ```
 
 The directory is silently skipped if it doesn't exist, so a fresh clone works
@@ -250,11 +250,12 @@ Each gets its own SSH port, disk, and tmux session.
 ### Copying files into a VM
 
 ```bash
-# From your Mac to the VM
-limactl copy myfile.txt myproject:/home/claude/work/
+# Use claudevm push/pull for files and directories
+claudevm push myproject myfile.txt          # copies to ~/work/myfile.txt in VM
+claudevm push myproject mydir '~/work/mydir'
 
-# Or pipe through ssh
-cat myfile.txt | claudevm connect myproject  # paste via stdin
+# Or use limactl copy directly (path is relative to VM home)
+limactl copy myfile.txt myproject:work/myfile.txt
 ```
 
 ### Using VS Code Remote SSH
@@ -271,13 +272,13 @@ claudevm ssh-config myproject >> ~/.ssh/config
 
 ```bash
 # Connect to the VM and set the token
-claudevm connect myproject
+claudevm ssh myproject
 # Inside VM:
-echo 'export GITHUB_TOKEN=ghp_...' >> ~/.bashrc.local
-source ~/.bashrc.local
+echo 'export GITHUB_TOKEN=ghp_...' >> ~/.bashrc
+source ~/.bashrc
 ```
 
-Or add environment variables to `~/.claudevm/skeleton/.bashrc` before creating the VM.
+Or add environment variables to your skeleton `~/.claudevm/skeleton/.bashrc` before creating the VM.
 
 ### Recreating a VM from scratch
 
@@ -316,7 +317,7 @@ This affects newly created VMs. For existing VMs, use `claudevm forward`.
 ### Checking what's running in the VM
 
 ```bash
-claudevm connect myproject
+claudevm ssh myproject
 # Inside VM:
 ps aux
 tmux ls        # list tmux sessions
@@ -326,7 +327,7 @@ tmux attach    # reattach to claude session
 ### Installing Rust in the VM
 
 ```bash
-claudevm connect myproject
+claudevm ssh myproject
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 source ~/.cargo/env
 ```
@@ -334,7 +335,7 @@ source ~/.cargo/env
 ### Installing additional languages
 
 ```bash
-claudevm connect myproject
+claudevm ssh myproject
 # Java
 sudo apt-get install -y openjdk-21-jdk
 # Ruby
@@ -356,7 +357,7 @@ Check progress with `limactl shell <name> -- journalctl -f`.
 
 ### SSH connection refused
 
-If `claudevm connect` fails with "connection refused", the VM may still be
+If `claudevm ssh` fails with "connection refused", the VM may still be
 booting. Wait a moment and retry, or check status with `claudevm status <name>`.
 
 ### Claude Code not found in VM
