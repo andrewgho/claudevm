@@ -15,9 +15,9 @@ The VM can be torn down when you are finished, or you hit a dead end.
 ## Quick start
 
 ```bash
-# Add claudevm to your PATH in your shell rc file, or add an alias
-export PATH="$HOME/path/to/claudevm/bin:$PATH"
-alias claudevm="$HOME/path/to/claudevm/bin/claudevm"
+# Copy claudevm somewhere on your PATH, or add the repo dir to PATH
+cp /path/to/claudevm/claudevm ~/claudevm
+# or: export PATH="$HOME/path/to/claudevm:$PATH"
 
 # Create a new VM and drop into a Claude Code session
 claudevm create myproject
@@ -46,7 +46,7 @@ Lima is already installed if you use Colima (`brew info lima` to verify).
 cd ~/work/claudevm
 
 # Add to your shell $PATH (this example assumes default zsh)
-echo 'export PATH="$HOME/work/claudevm/bin:$PATH"' >> ~/.zshrc
+echo 'export PATH="$HOME/work/claudevm:$PATH"' >> ~/.zshrc
 source ~/.zshrc
 
 # Verify
@@ -78,7 +78,7 @@ commands directly (`limactl copy -r myproject:path/to/file.txt .`).
 
 ## VM specification
 
-Defined in `template.yaml`. Defaults:
+Defined in the `write_template()` function embedded in `claudevm`. Defaults:
 
 - **OS**: Debian 13 (Trixie), ARM64
 - **CPU**: 4 vCPUs
@@ -183,7 +183,7 @@ brew install socket_vmnet
 sudo brew services start socket_vmnet
 ```
 
-Then add to `template.yaml`:
+Then edit the `write_template()` function in `claudevm` to add:
 ```yaml
 networks:
 - lima: shared
@@ -290,7 +290,7 @@ Since the skeleton is re-applied, your dotfiles and PATH are always consistent.
 
 ### Changing VM resources
 
-Edit `template.yaml` before creating a VM:
+Edit the `write_template()` function in `claudevm` before creating a VM:
 
 ```yaml
 cpus: 8
@@ -303,7 +303,7 @@ To change resources on an existing VM, you must destroy and recreate it.
 
 ### Adding more forwarded ports
 
-Edit the `portForwards` section in `template.yaml`:
+Edit the `portForwards` section in `write_template()` inside `claudevm`:
 
 ```yaml
 portForwards:
@@ -368,7 +368,7 @@ Check with `npm bin -g` and add to `~/.bashrc` if needed.
 
 Lima sets up port forwarding when the VM starts. If a port isn't working:
 1. Verify the service is actually listening inside the VM: `ss -tlnp | grep <port>`
-2. Check the port is in `portForwards` in `template.yaml`
+2. Check the port is in `portForwards` in `write_template()` inside `claudevm`
 3. Try `claudevm forward <name> <port>` for an explicit tunnel
 
 ### Reclaim disk space

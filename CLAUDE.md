@@ -7,10 +7,13 @@ anything inside it without touching the host.
 ## Repository layout
 
 ```
-bin/claudevm      Main CLI script (~430 lines bash)
-template.yaml      Lima VM definition (OS, resources, provision script, port forwards)
+claudevm          Main CLI script — single file, copy anywhere on $PATH
 README.md          User-facing documentation
 ```
+
+The Lima VM template (OS image, cpus/memory/disk, port forwards, provision scripts) is
+embedded in `claudevm` via a heredoc in `write_template()`. Edit it there to change
+VM resources or add packages.
 
 The skeleton directory (`~/.claudevm/skeleton/` by default, or `--skeleton <path>` on create)
 is user-local and not part of the repository. Files there are copied into the VM's home
@@ -97,7 +100,7 @@ on the Mac.
 
 ## Adding a new command
 
-1. Write a `cmd_<name>()` function in `bin/claudevm`
+1. Write a `cmd_<name>()` function in `claudevm`
 2. Add a `<name>) cmd_<name> "$@" ;;` line in the `case` dispatch block
 3. Add a line to the `usage()` heredoc
 
