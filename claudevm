@@ -371,6 +371,12 @@ provision:
     nvm alias default 22
     npm install -g @anthropic-ai/claude-code
 
+    echo "==> Installing credential keep-alive cron job"
+    # Runs claude -p every 4 hours to exercise the OAuth refresh token path and
+    # prevent credentials from going stale between claudevm creds syncs.
+    # bash -l is required so NVM is sourced and claude is on PATH.
+    (crontab -l 2>/dev/null; echo "0 */4 * * * bash -l -c 'claude --no-session-persistence --tools \"\" -p ping >> ~/.claude_dash_p.out 2>&1'") | crontab -
+
     echo "==> Setup complete"
 TEMPLATE_EOF
     echo "$tmp"
