@@ -6,7 +6,7 @@ set -euo pipefail
 
 CLAUDEVM_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TEMPLATE="$CLAUDEVM_DIR/template.yaml"
-HOME_SEED="$CLAUDEVM_DIR/home-seed"
+DEFAULT_SKELETON="$HOME/.claudevm/skeleton"
 CLAUDE_SESSION="claude"
 
 # ── helpers ─────────────────────────────────────────────────────────────────
@@ -115,23 +115,38 @@ wait_provision() {
     die "Provisioning timed out after 10 minutes"
 }
 
-# Populate the Lima user's home directory from home-seed
+# Populate the Lima user's home directory from a skeleton directory.
+# Usage: populate_home <vm-name> [skeleton-path]
+# Defaults to ~/.claudevm/skeleton/; silently skips if path does not exist.
 populate_home() {
     local name="$1"
+    local skeleton="${2:-$DEFAULT_SKELETON}"
     local home
     home=$(vm_home "$name")
-    echo "==> Populating home directory from home-seed..."
 
-    # Build a tar of the home-seed directory and pipe it into the VM as the Lima user.
-    # COPYFILE_DISABLE suppresses macOS extended-attribute entries (.__MACOSX,
-    # com.apple.provenance, etc.) that produce warnings from GNU tar in the VM.
-    COPYFILE_DISABLE=1 tar --no-xattrs -C "$HOME_SEED" -czf - . \
-        | vm_ssh "$name" "tar -xzf - -C '$home'"
-
-    # Create work directory if not in seed
+    # Create standard directories regardless of skeleton
     vm_ssh "$name" 'mkdir -p ~/work ~/bin ~/go'
 
-    echo "==> Home directory populated."
+    if [ ! -d "$skeleton" ]; then
+        [ "$skeleton" = "$DEFAULT_SKELETON" ] \
+            || echo "    Warning: skeleton path '$skeleton' not found — skipping."
+        return 0
+    fi
+
+    local contents
+    contents=$(ls -A "$skeleton" 2>/dev/null)
+    if [ -z "$contents" ]; then
+        return 0
+    fi
+
+    echo "==> Copying skeleton from $skeleton..."
+    # COPYFILE_DISABLE suppresses macOS extended-attribute entries (com.apple.provenance
+    # etc.) that produce warnings from GNU tar in the VM.
+    COPYFILE_DISABLE=1 tar --no-xattrs \
+        --exclude='.DS_Store' --exclude='.localized' \
+        -C "$skeleton" -czf - . \
+        | vm_ssh "$name" "tar -xzf - -C '$home'"
+    echo "==> Skeleton copied."
 }
 
 # Forward Claude Code credentials from the host macOS Keychain into the VM.
@@ -238,7 +253,25 @@ silent_init() {
 # ── commands ────────────────────────────────────────────────────────────────
 
 cmd_create() {
-    local name
+    local name skeleton=""
+    # Parse --skeleton <path> before the positional name argument
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --skeleton)
+                shift
+                skeleton="${1:-}"
+                [ -n "$skeleton" ] || die "--skeleton requires a path argument"
+                shift
+                ;;
+            --skeleton=*)
+                skeleton="${1#--skeleton=}"
+                shift
+                ;;
+            *)
+                break
+                ;;
+        esac
+    done
     name=$(require_name "${1:-}")
 
     # Check if already exists
@@ -254,7 +287,7 @@ cmd_create() {
     limactl start "$name"
 
     wait_provision "$name"
-    populate_home "$name"
+    populate_home "$name" ${skeleton:+"$skeleton"}
     sync_credentials "$name"
     silent_init "$name"
 
@@ -508,7 +541,10 @@ usage() {
 claudevm - manage isolated Debian development VMs
 
 Usage:
-  claudevm create <name>          Create VM, provision, drop into Claude Code
+  claudevm create [--skeleton <dir>] <name>
+                                 Create VM, provision, drop into Claude Code
+                                 Skeleton dir defaults to ~/.claudevm/skeleton/
+                                 (silently skipped if absent)
   claudevm claude <name>          Attach to (or start) Claude Code tmux session
   claudevm ssh <name> [ssh-opts] [-- cmd [args...]]
                                  Interactive shell, or run a remote command.
@@ -548,7 +584,7 @@ Notes:
   - Services running on common ports (3000, 4000, 5000, 8000, 8080, 8888,
     9000) are automatically forwarded to localhost on the Mac.
   - Config: <claudevm-dir>/template.yaml (VM resources, port forwards)
-  - Home seed: <claudevm-dir>/home-seed/ (dotfiles copied on create)
+  - Skeleton: ~/.claudevm/skeleton/ (dotfiles/dirs copied into VM home on create)
 EOF
 }
 

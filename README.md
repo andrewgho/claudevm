@@ -196,22 +196,25 @@ Run `claudevm ip <name>` to see the IP.
 
 ## Home directory customization
 
-On `claudevm create`, the contents of `home-seed/` are copied into the VM's
-`/home/claude/` directory. To customize what every new VM gets:
+On `claudevm create`, any files in `~/.claudevm/skeleton/` are copied into the
+VM's home directory. This is your personal dotfile seed — it's not part of the
+repository, so you can put anything there without it affecting other users.
 
 ```
-home-seed/
+~/.claudevm/skeleton/
   .bashrc         # shell config, PATH, aliases
   .bash_profile   # login shell
   .gitconfig      # git settings
-  .inputrc        # readline settings
+  .tmux.conf      # tmux preferences
   bin/            # ~/bin is on PATH; put custom scripts here
 ```
 
-You can add any dotfiles here. The seed is applied once at VM creation.
+The directory is silently skipped if it doesn't exist, so a fresh clone works
+out of the box. You can also pass `--skeleton <path>` to `claudevm create` to
+use a different directory for a specific VM.
 
-To add dotfiles to existing VMs, use `claudevm connect` and copy them manually,
-or use `claudevm forward` + `rsync`.
+The seed is applied once at VM creation. To add dotfiles to existing VMs, use
+`claudevm ssh` and copy them manually, or use `claudevm push`.
 
 ---
 
@@ -274,7 +277,7 @@ echo 'export GITHUB_TOKEN=ghp_...' >> ~/.bashrc.local
 source ~/.bashrc.local
 ```
 
-Or set environment variables in `home-seed/.bashrc.local` before creating the VM.
+Or add environment variables to `~/.claudevm/skeleton/.bashrc` before creating the VM.
 
 ### Recreating a VM from scratch
 
@@ -283,7 +286,7 @@ claudevm destroy myproject   # type name to confirm
 claudevm create myproject    # fresh VM, same name
 ```
 
-Since the home-seed is re-applied, your dotfiles and PATH are always consistent.
+Since the skeleton is re-applied, your dotfiles and PATH are always consistent.
 
 ### Changing VM resources
 

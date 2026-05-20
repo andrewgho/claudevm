@@ -9,9 +9,12 @@ anything inside it without touching the host.
 ```
 bin/claudevm      Main CLI script (~430 lines bash)
 template.yaml      Lima VM definition (OS, resources, provision script, port forwards)
-home-seed/         Dotfiles seeded into the Lima user's home on every new VM
 README.md          User-facing documentation
 ```
+
+The skeleton directory (`~/.claudevm/skeleton/` by default, or `--skeleton <path>` on create)
+is user-local and not part of the repository. Files there are copied into the VM's home
+directory on `claudevm create`. If the directory is absent, it is silently skipped.
 
 ## Key design decisions
 
