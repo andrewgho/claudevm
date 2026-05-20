@@ -235,11 +235,11 @@ print(json.dumps(d))
 silent_init() {
     local name="$1"
     echo "==> Running Claude Code first-run initialization (headless)..."
-    # -p/--print mode skips the interactive wizard entirely; --dangerously-skip-permissions
-    # avoids any permission prompts; output is suppressed.
-    # Use a login shell so .bash_profile/.bashrc are sourced and claude is on PATH.
+    # -p/--print mode skips the interactive wizard entirely.
+    # Explicitly source NVM so claude is on PATH regardless of what .bashrc the
+    # skeleton may have installed (which may not include NVM initialization).
     if vm_ssh "$name" \
-        "bash -l -c 'cd ~/work && claude -p hello'"; then
+        "bash -l -c '[ -f ~/.nvm/nvm.sh ] && source ~/.nvm/nvm.sh; cd ~/work && claude -p hello'"; then
         echo "==> Claude Code initialized."
     else
         echo "    Warning: headless initialization returned an error (exit $?)."
