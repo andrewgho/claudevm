@@ -252,7 +252,7 @@ silent_init() {
 # Caller is responsible for deleting the file when done.
 write_template() {
     local tmp
-    tmp=$(mktemp /tmp/claudevm-XXXXXX.yaml)
+    tmp=$(mktemp /tmp/claudevm-XXXXXX)
     cat > "$tmp" << 'TEMPLATE_EOF'
 minimumLimaVersion: 2.0.0
 
@@ -260,13 +260,11 @@ vmType: vz
 networks:
 - vzNAT: true
 
+containerd:
+  system: false
+  user: false
+
 images:
-- location: "https://cloud.debian.org/images/cloud/trixie/20251117-2299/debian-13-genericcloud-arm64-20251117-2299.qcow2"
-  arch: "aarch64"
-  digest: "sha512:5075d49a9a85f29d1ee78302785b0d5270fd22c16ca75b4b280f7f4c240fcd34fdfa22ab15a5457aa14fbdbf36d8c5562d1133709b58fc8efdec40e363eba085"
-- location: "https://cloud.debian.org/images/cloud/trixie/20251117-2299/debian-13-genericcloud-amd64-20251117-2299.qcow2"
-  arch: "x86_64"
-  digest: "sha512:e5563c7bb388eebf7df385e99ee36c83cd16ba8fad4bd07f4c3fd725a6f1cf1cb9f54c6673d4274a856974327a5007a69ff24d44f9b21f7f920e1938a19edf7e"
 - location: "https://cloud.debian.org/images/cloud/trixie/daily/latest/debian-13-genericcloud-arm64-daily.qcow2"
   arch: "aarch64"
 - location: "https://cloud.debian.org/images/cloud/trixie/daily/latest/debian-13-genericcloud-amd64-daily.qcow2"
@@ -416,9 +414,8 @@ cmd_create() {
 
     local tmpfile
     tmpfile=$(write_template)
-    limactl create --tty=false --name="$name" "$tmpfile"
+    limactl start --tty=false --name="$name" "$tmpfile"
     rm -f "$tmpfile"
-    limactl start "$name"
 
     wait_provision "$name"
     populate_home "$name" ${skeleton:+"$skeleton"}
